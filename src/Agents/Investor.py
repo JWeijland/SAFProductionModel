@@ -10,6 +10,10 @@ from src.Agents.SAF_Production_Site import SAFProductionSite
 from src.Agents.FeedstockContract import FeedstockContract
 # CLAUDE END - Import for Phase 1 contract implementation
 
+# CLAUDE START - Import for Phase 2: year_for_tick utility
+from src.utils import year_for_tick
+# CLAUDE END - Import for Phase 2: year_for_tick utility
+
 from typing import List, Dict, Optional, Tuple, Deque, Any
 
 from mesa import Agent
@@ -440,13 +444,22 @@ class Investor(Agent):
 
         capex_schedule: List = self.capex_schedule
 
- 
+        # CLAUDE START - Phase 2: Pass contract pricing to NPV calculation
+        # Use site's SRMC as the contract price (this will be the initial contract price)
+        contract_price = site.aggregator.feedstock_price
+        start_year = year_for_tick(
+            int(self.model.config["start_year"]),
+            current_tick
+        )
 
         npv: float = self.calculate_npv(
 
-            site, production_output, srmc_no_profit, capex_schedule
+            site, production_output, srmc_no_profit, capex_schedule,
+            contract_price=contract_price,
+            start_year=start_year
 
         )
+        # CLAUDE END - Phase 2: Pass contract pricing to NPV calculation
 
         asset = {
 
@@ -721,28 +734,30 @@ class Investor(Agent):
         capex: float,
 
         annual_load_factor: float,
+        # CLAUDE START - Phase 2: Add current_year parameter
+        current_year: int = None,
+        # CLAUDE END - Phase 2: Add current_year parameter
 
     ) -> float:
 
         """
-        # CLAUDE NOTE - Phase 1 TODO:
-        # This method currently uses site.srmc which includes the original feedstock price.
-        # For full contract integration, we should use get_feedstock_cost() to calculate
-        # blended feedstock costs (contract + spot). However, this requires careful
-        # refactoring to avoid breaking existing logic.
-        # For Phase 1, contracts are created and tracked, but EBIT calculations
-        # still use original SRMC. This can be updated in Phase 2.
+        # CLAUDE NOTE - Phase 2 IMPLEMENTED:
+        # This method now uses blended feedstock costs (contract + spot) via get_feedstock_cost().
+        # It calculates a contract-aware SRMC that accounts for:
+        # - 80-90% contract pricing with 3% annual escalation
+        # - 10-20% spot market pricing
+        # This provides realistic feedstock cost evolution over time.
         # CLAUDE END NOTE
 
         Compute EBIT for a site in current year.
 
- 
+
 
         Equation:
 
           - EBIT = Revenue - Cost
 
- 
+
 
         Rules:
 
@@ -752,7 +767,7 @@ class Investor(Agent):
 
           - Otherwise full available production.
 
- 
+
 
         Parameters:
 
@@ -764,7 +779,9 @@ class Investor(Agent):
 
             annual_load_factor: Realised annual load factor from aggregator (factors in feedstock variability).
 
- 
+            current_year: Current simulation year (for contract-aware SRMC calculation).
+
+
 
         Returns:
 
@@ -772,13 +789,41 @@ class Investor(Agent):
 
         """
 
- 
+        # CLAUDE START - Phase 2: Calculate contract-aware SRMC
+        # Use blended feedstock costs (contract + spot) instead of fixed aggregator price
+        if current_year is not None:
+            # Get spot price for this state
+            spot_price = self.model.state_spot_prices.get(
+                site.state_id,
+                site.aggregator.feedstock_price  # Fallback to aggregator price
+            )
+
+            # Get blended feedstock cost (contract + spot)
+            blended_feedstock_cost = self.get_feedstock_cost(
+                plant=site,
+                current_year=current_year,
+                spot_price=spot_price
+            )
+
+            # Calculate contract-aware SRMC
+            effective_srmc = (
+                blended_feedstock_cost
+                + site.opex
+                + site.transport_cost
+                + site.profit_margin
+            )
+        else:
+            # Backwards compatibility: use original SRMC if no current_year provided
+            effective_srmc = site.srmc
+        # CLAUDE END - Phase 2: Calculate contract-aware SRMC
+
+
 
         full_production_volume = site.year_production_output
 
- 
 
-        if site.srmc > market_price:
+
+        if effective_srmc > market_price:
 
             cost = (
 
@@ -800,13 +845,13 @@ class Investor(Agent):
 
             return -cost
 
- 
+        # CLAUDE START - Phase 2: Use effective_srmc instead of site.srmc
+        srmc_no_profit = effective_srmc - site.profit_margin
 
-        srmc_no_profit = site.srmc - site.profit_margin
 
- 
 
-        if math.isclose(site.srmc, market_price):
+        if math.isclose(effective_srmc, market_price):
+        # CLAUDE END - Phase 2: Use effective_srmc instead of site.srmc
 
             marginal_multiplier = self.calculate_marginal_output(
 
@@ -903,14 +948,21 @@ class Investor(Agent):
             self.total_capital_invested += capex
 
             if site.operational_year <= current_tick:
+                # CLAUDE START - Phase 2: Pass current_year to calculate_ebit
+                current_year = year_for_tick(
+                    int(self.model.config["start_year"]),
+                    current_tick
+                )
 
                 ebit = self.calculate_ebit(
 
-                    site, market_price, capex, site.aggregator.annual_load_factor
+                    site, market_price, capex, site.aggregator.annual_load_factor,
+                    current_year=current_year
 
                 )
+                # CLAUDE END - Phase 2: Pass current_year to calculate_ebit
 
- 
+
 
                 asset["ebit_history"].append(ebit)
 
@@ -983,16 +1035,21 @@ class Investor(Agent):
         srmc_no_profit: float,
 
         capex_schedule: List[float],
+        # CLAUDE START - Phase 2: Add contract pricing parameters
+        contract_price: float = None,
+        start_year: int = None,
+        # CLAUDE END - Phase 2: Add contract pricing parameters
 
     ) -> float:
 
         """
-        # CLAUDE NOTE - Phase 1:
-        # NPV calculation currently uses srmc_no_profit without contract adjustments.
-        # In Phase 1, contracts are created AFTER investment decision, so NPV is
-        # calculated based on current SRMC (which becomes the initial contract price).
-        # This is internally consistent. Phase 2+ could add contract price forecasting
-        # to NPV calculations for more sophisticated modeling.
+        # CLAUDE NOTE - Phase 2 IMPLEMENTED:
+        # NPV calculation now accounts for blended feedstock costs with contract escalation.
+        # When contract_price and start_year are provided, the NPV forecast includes:
+        # - 85% contract pricing with 3% annual escalation for first 20 years
+        # - 15% spot pricing throughout
+        # - 100% spot pricing after contract expires (year 21+)
+        # This provides realistic long-term cost evolution for investment decisions.
         # CLAUDE END NOTE
 
         Calculate the net present value (NPV) of a candidate site.
@@ -1050,6 +1107,14 @@ class Investor(Agent):
         """
 
         npv = 0.0
+        # CLAUDE START - Phase 2: Contract-aware NPV calculation
+        # Determine if we should use contract pricing
+        use_contract_pricing = (contract_price is not None and start_year is not None)
+        contract_percentage = 0.85  # 85% contract, 15% spot
+        escalation_rate = 0.03  # 3% annual escalation
+        contract_duration = 20  # 20 years
+        construction_time = self.model.config["saf_plant_construction_time"]
+        # CLAUDE END - Phase 2: Contract-aware NPV calculation
 
         for t in range(1, self.investment_horizon + 1):
 
@@ -1057,11 +1122,11 @@ class Investor(Agent):
 
             forecasted_price, marginal_details = self.get_forecast_price(t)
 
- 
+
 
             # When plant is still in construction
 
-            if t <= self.model.config["saf_plant_construction_time"]:
+            if t <= construction_time:
 
                 current_production_output = 0
 
@@ -1070,12 +1135,45 @@ class Investor(Agent):
                 cost = capex_schedule[t - 1]
 
             else:
+                # CLAUDE START - Phase 2: Calculate contract-aware SRMC for NPV
+                # Operational phase - calculate SRMC with contract pricing if applicable
+                if use_contract_pricing:
+                    # Years since plant became operational
+                    years_operational = t - construction_time
 
-                if site.srmc > forecasted_price:
+                    # Forecasted spot price (use SAF price as proxy for feedstock)
+                    spot_forecast = forecasted_price * 0.4  # Rough approximation: feedstock ~40% of SAF price
+
+                    if years_operational <= contract_duration:
+                        # Contract is active - use blended pricing with escalation
+                        escalated_contract_price = contract_price * ((1 + escalation_rate) ** years_operational)
+                        blended_feedstock_cost = (
+                            escalated_contract_price * contract_percentage +
+                            spot_forecast * (1 - contract_percentage)
+                        )
+                    else:
+                        # Contract expired - use 100% spot pricing
+                        blended_feedstock_cost = spot_forecast
+
+                    # Calculate contract-aware SRMC for this year
+                    effective_srmc_for_npv = (
+                        blended_feedstock_cost +
+                        site.opex +
+                        site.transport_cost +
+                        site.profit_margin
+                    )
+                    effective_srmc_no_profit = effective_srmc_for_npv - site.profit_margin
+                else:
+                    # Backwards compatibility: use original SRMC
+                    effective_srmc_for_npv = site.srmc
+                    effective_srmc_no_profit = srmc_no_profit
+                # CLAUDE END - Phase 2: Calculate contract-aware SRMC for NPV
+
+                if effective_srmc_for_npv > forecasted_price:
 
                     current_production_output = 0
 
-                elif site.srmc < forecasted_price:
+                elif effective_srmc_for_npv < forecasted_price:
 
                     current_production_output = production_output
 
@@ -1093,7 +1191,7 @@ class Investor(Agent):
 
                     current_production_output = production_output * marginal_multiplier
 
- 
+
 
                 revenue = (
 
@@ -1101,7 +1199,7 @@ class Investor(Agent):
 
                 )
 
- 
+
 
                 raw_opex = self.model.config["opex"]
 
@@ -1109,7 +1207,7 @@ class Investor(Agent):
 
                 cost = (
 
-                    srmc_no_profit * current_production_output
+                    effective_srmc_no_profit * current_production_output
 
                     + (production_output - current_production_output) * raw_opex
 
