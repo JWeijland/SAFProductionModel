@@ -1085,6 +1085,125 @@ Phase 2 is \textbf{completed} - integrates contract pricing into EBIT and NPV ca
 \textbf{Phase 2 Commits:}
 \begin{enumerate}
     \item Implement contract-aware EBIT and NPV calculations
+    \item Fix critical bug: Contract price doubling (SRMC vs feedstock)
+    \item Fix escalation: Base feedstock price must increase over time
 \end{enumerate}
+
+\section{Critical Fix: Base Feedstock Price Escalation}
+
+\subsection{Problem Discovered}
+
+After Phase 2 implementation, production graphs showed periodic gaps where plants stopped producing unexpectedly. Root cause analysis revealed:
+
+\textbf{Symptom:}
+\begin{itemize}
+    \item Older plants (built in 2025) would stop producing in 2040
+    \item Production would resume in 2054 when contracts expired
+    \item Pattern repeated: produce → stop → produce again
+\end{itemize}
+
+\textbf{Root Cause:}
+\begin{lstlisting}[language=Python, caption=Unrealistic Contract Pricing]
+# OLD (BROKEN):
+Year 2025: Plant A → contract @ $360 → SRMC = $1,496
+Year 2040: Plant A → escalated @ $561 → SRMC = $1,666 (expensive!)
+Year 2040: Plant B (NEW) → contract @ $360 → SRMC = $1,496 (cheap!)
+
+# Result: Plant B sets market price at $1,496
+#         Plant A cannot compete at $1,666 → STOPS producing
+\end{lstlisting}
+
+\textbf{Why This Is Wrong:}
+\begin{itemize}
+    \item New plants always got contracts at \textbf{fixed} CSV price (\$360-468)
+    \item Old plants' costs escalated 3\%/year, new plants stayed cheap
+    \item Merit order didn't shift up → old plants became uncompetitive
+    \item In reality: feedstock prices rise for \textbf{everyone}, not just old contracts
+\end{itemize}
+
+\subsection{Solution Implemented}
+
+Escalate the base feedstock price when creating new contracts:
+
+\begin{lstlisting}[language=Python, caption=Realistic Market Escalation]
+# CLAUDE START - Phase 2 FIX
+base_feedstock_price = aggregator.feedstock_price  # From CSV: $360
+start_year = int(self.model.config["start_year"])
+years_since_model_start = current_year - start_year
+
+# Escalate to current market level
+escalated_base_price = base_feedstock_price * (
+    (1 + escalation_rate) ** years_since_model_start
+)
+
+# Use escalated price for new contracts
+contract = FeedstockContract(
+    initial_contract_price=escalated_base_price,  # NOT base price!
+    ...
+)
+# CLAUDE END - Phase 2 FIX
+\end{lstlisting}
+
+\textbf{Result (CORRECT):}
+\begin{lstlisting}[language=Python, caption=All Plants Competitive]
+Year 2025: Plant A → contract @ $360 → SRMC = $1,496
+Year 2040: Plant A → escalated @ $561 → SRMC = $1,666
+Year 2040: Plant B (NEW) → contract @ $561 → SRMC = $1,666 (SAME!)
+
+# Result: All plants have similar costs
+#         Market price rises naturally with inflation
+#         Continuous production ✓
+\end{lstlisting}
+
+\subsection{Impact}
+
+\textbf{Before Fix:}
+\begin{itemize}
+    \item[$\times$] New plants always cheaper than old plants
+    \item[$\times$] Merit order didn't shift up over time
+    \item[$\times$] Old plants periodically stopped producing (unrealistic)
+    \item[$\times$] Production gaps in output graphs
+\end{itemize}
+
+\textbf{After Fix:}
+\begin{itemize}
+    \item[$\checkmark$] All plants have similar SRMC in their start year
+    \item[$\checkmark$] Merit order shifts up realistically with market inflation
+    \item[$\checkmark$] Market price increases over time
+    \item[$\checkmark$] Continuous production (no artificial gaps)
+    \item[$\checkmark$] Realistic representation of feedstock market dynamics
+\end{itemize}
+
+\subsection{Implementation Details}
+
+\textbf{Files Modified:}
+\begin{itemize}
+    \item \texttt{src/Agents/Investor.py}:
+    \begin{itemize}
+        \item \texttt{create\_contract()}: Calculate \texttt{escalated\_base\_price}
+        \item \texttt{evaluate\_investment()}: Use escalated price in NPV calculation
+    \end{itemize}
+    \item \texttt{tests/test\_contract\_integration.py}: Updated test expectations
+\end{itemize}
+
+\textbf{Testing:}
+\begin{itemize}
+    \item[$\checkmark$] All 31 contract tests passing
+    \item[$\checkmark$] Verified SRMC consistency across plant vintages
+    \item[$\checkmark$] Confirmed merit order shifts up over time
+\end{itemize}
+
+\subsection{Final Git Status}
+
+\textbf{Branch:} \texttt{feature/feedstock-contracts} \\
+\textbf{Total Commits:} 12 commits
+\begin{enumerate}
+    \item Phase 1: 8 commits (contract infrastructure)
+    \item Phase 2: 2 commits (EBIT/NPV integration)
+    \item Bug fixes: 2 commits (SRMC doubling, base price escalation)
+\end{enumerate}
+
+\textbf{Tests:} 31/31 passing ✅ \\
+\textbf{Status:} Ready for user testing and merge to main
 
 \end{document}
