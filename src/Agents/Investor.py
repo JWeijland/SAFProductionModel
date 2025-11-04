@@ -6,6 +6,10 @@ from collections import deque
 
 from src.Agents.SAF_Production_Site import SAFProductionSite
 
+# CLAUDE START - Import for Phase 1 contract implementation
+from src.Agents.FeedstockContract import FeedstockContract
+# CLAUDE END - Import for Phase 1 contract implementation
+
 from typing import List, Dict, Optional, Tuple, Deque, Any
 
 from mesa import Agent
@@ -232,7 +236,11 @@ class Investor(Agent):
 
         self.max_dr: float = model.config["DR_max"]
 
- 
+        # CLAUDE START - Contract tracking for Phase 1 implementation
+        self.contracts: List[FeedstockContract] = []
+        # CLAUDE END - Contract tracking for Phase 1 implementation
+
+
 
     def adjust_discount_rate(
 
@@ -687,6 +695,14 @@ class Investor(Agent):
     ) -> float:
 
         """
+        # CLAUDE NOTE - Phase 1 TODO:
+        # This method currently uses site.srmc which includes the original feedstock price.
+        # For full contract integration, we should use get_feedstock_cost() to calculate
+        # blended feedstock costs (contract + spot). However, this requires careful
+        # refactoring to avoid breaking existing logic.
+        # For Phase 1, contracts are created and tracked, but EBIT calculations
+        # still use original SRMC. This can be updated in Phase 2.
+        # CLAUDE END NOTE
 
         Compute EBIT for a site in current year.
 
@@ -940,7 +956,16 @@ class Investor(Agent):
 
     ) -> float:
 
-        """Calculate the net present value (NPV) of a candidate site.
+        """
+        # CLAUDE NOTE - Phase 1:
+        # NPV calculation currently uses srmc_no_profit without contract adjustments.
+        # In Phase 1, contracts are created AFTER investment decision, so NPV is
+        # calculated based on current SRMC (which becomes the initial contract price).
+        # This is internally consistent. Phase 2+ could add contract price forecasting
+        # to NPV calculations for more sophisticated modeling.
+        # CLAUDE END NOTE
+
+        Calculate the net present value (NPV) of a candidate site.
 
  
 
@@ -1192,7 +1217,139 @@ class Investor(Agent):
 
         return capex_total_cost * (1 - decrease)
 
- 
+    # CLAUDE START - Contract methods for Phase 1 implementation
+    def create_contract(
+        self,
+        aggregator,
+        plant: SAFProductionSite,
+        current_year: int,
+    ) -> FeedstockContract:
+        """
+        Create a new 20-year feedstock contract for a plant.
+
+        This is called when the investor decides to invest in a new plant.
+        The contract locks in feedstock supply at the plant's current SRMC
+        with 3% annual escalation.
+
+        Parameters:
+            aggregator: FeedstockAggregator for the plant's state
+            plant: SAFProductionSite that needs feedstock
+            current_year: Year contract is signed
+
+        Returns:
+            FeedstockContract object
+
+        Side effects:
+            - Adds contract to self.contracts
+        """
+        # Investor chooses coverage percentage (80-90%)
+        contract_percentage = self.decide_contract_percentage()
+
+        # Get contract duration and escalation from model config
+        duration = int(self.model.config.get("contract_duration", 20))
+        escalation_rate = float(self.model.config.get("contract_escalation_rate", 0.03))
+
+        # Create contract using plant's SRMC as initial price
+        contract = FeedstockContract(
+            contract_id=f"contract_{plant.site_id}",
+            investor_id=self.investor_id,
+            aggregator_id=aggregator.state_id,
+            plant_id=plant.site_id,
+            initial_contract_price=plant.srmc,
+            start_year=current_year,
+            end_year=current_year + duration,
+            annual_capacity=plant.max_capacity * plant.design_load_factor,
+            contract_percentage=contract_percentage,
+            escalation_rate=escalation_rate,
+            duration=duration,
+            status="active"
+        )
+
+        # Add to investor's contract list
+        self.contracts.append(contract)
+
+        logger.info(
+            f"Investor {self.investor_id} created contract {contract.contract_id}: "
+            f"{contract_percentage:.1%} coverage at ${plant.srmc:.2f}/tonne"
+        )
+
+        return contract
+
+    def decide_contract_percentage(self) -> float:
+        """
+        Investor chooses what percentage of plant capacity to cover with contract.
+
+        Phase 1: Simple random uniform sampling in [0.80, 0.90].
+        Phase 2+: Could be based on risk aversion, price expectations, etc.
+
+        Returns:
+            Contract percentage between 0.80 and 0.90
+        """
+        min_pct = float(self.model.config.get("contract_percentage_min", 0.80))
+        max_pct = float(self.model.config.get("contract_percentage_max", 0.90))
+
+        return random.uniform(min_pct, max_pct)
+
+    def get_feedstock_cost(
+        self,
+        plant: SAFProductionSite,
+        current_year: int,
+        spot_price: float
+    ) -> float:
+        """
+        Calculate blended feedstock cost for a plant.
+
+        Returns weighted average of:
+        - Contract price (80-90% coverage) - escalated from initial price
+        - Spot price (10-20% remaining)
+
+        If no contract exists for the plant, returns full spot price.
+
+        Parameters:
+            plant: SAFProductionSite to calculate cost for
+            current_year: Current calendar year
+            spot_price: Current spot market price for the plant's state
+
+        Returns:
+            Blended feedstock cost in USD/tonne
+
+        Example:
+            Contract: 85% @ $695/tonne
+            Spot: 15% @ $720/tonne
+            Blended: 0.85 * 695 + 0.15 * 720 = $699.75/tonne
+        """
+        # Find active contract for this plant
+        contract = next(
+            (c for c in self.contracts
+             if c.plant_id == plant.site_id
+             and c.is_active(current_year)),
+            None
+        )
+
+        # No contract - use full spot price
+        if contract is None:
+            return spot_price
+
+        # Get escalated contract price for this year
+        contract_price = contract.get_price_for_year(current_year)
+
+        # Calculate blended cost
+        contract_cost = contract_price * contract.contract_percentage
+        spot_cost = spot_price * (1 - contract.contract_percentage)
+
+        blended_cost = contract_cost + spot_cost
+
+        logger.debug(
+            f"Plant {plant.site_id} year {current_year}: "
+            f"{contract.contract_percentage:.1%} @ ${contract_price:.2f} + "
+            f"{1-contract.contract_percentage:.1%} @ ${spot_price:.2f} = "
+            f"${blended_cost:.2f}/tonne"
+        )
+
+        return blended_cost
+    # CLAUDE END - Contract methods for Phase 1 implementation
+
+
 
     def update_supply(self) -> None:
 
