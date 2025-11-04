@@ -1,0 +1,867 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{parskip}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+
+\definecolor{primaryblue}{RGB}{30, 64, 175}
+\definecolor{codegray}{RGB}{240, 240, 240}
+\definecolor{warningyellow}{RGB}{255, 193, 7}
+\definecolor{successgreen}{RGB}{76, 175, 80}
+
+\titleformat{\section}{\Large\bfseries\color{primaryblue}}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.5em}{}
+
+\lstset{
+    backgroundcolor=\color{codegray},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.8em}
+
+\begin{document}
+
+\title{\textbf{Phase 1 Implementation Plan:\\Minimal Viable Contract System\\for SAF Market Model}}
+\author{Jelle Weijland}
+\date{\today}
+\maketitle
+
+\begin{tcolorbox}[colback=warningyellow!10,colframe=warningyellow!80!black,title=\textbf{Implementation Strategy}]
+This document describes a \textbf{simplified Phase 1} implementation that introduces long-term feedstock contracts while deliberately postponing complex mechanisms (iterative negotiation, utilization fractions) to reduce implementation risk and ensure system stability.
+
+\textbf{Staged Approach:}
+\begin{itemize}
+    \item \textbf{Phase 1 (This Document):} Core contract infrastructure with fixed pricing
+    \item \textbf{Phase 2 (Future):} Add price discovery mechanisms if needed
+    \item \textbf{Phase 3 (Future):} Add capacity utilization dynamics if needed
+\end{itemize}
+\end{tcolorbox}
+
+\section{Rationale: Why Simplify?}
+
+\subsection{Complexity Risk Assessment}
+
+The full implementation plan (see \texttt{IMPLEMENTATION\_PLAN.tex}) proposes four major additions:
+\begin{enumerate}
+    \item \textbf{Iterative 30-day negotiations} with non-linear dampening
+    \item \textbf{Contract infrastructure} (20-year duration, 80--90\% coverage)
+    \item \textbf{Spot market pricing} (averaging across aggregators)
+    \item \textbf{Dynamic utilization fractions} (time-varying capacity limits)
+\end{enumerate}
+
+\textbf{Problem:} Implementing all simultaneously creates:
+
+\begin{tcolorbox}[colback=red!5,colframe=red!75!black]
+\textbf{Debugging Complexity}
+\begin{itemize}
+    \item Adding 4 interconnected mechanisms makes isolating bugs extremely difficult
+    \item When behavior is unexpected, which component is responsible?
+    \item 30-day sub-simulations × multiple aggregators × 30 years = $\sim$27,000 negotiation rounds
+    \item Each round involves NPV recalculations for all investors
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=red!5,colframe=red!75!black]
+\textbf{Emergent Behavior Unpredictability}
+\begin{itemize}
+    \item Non-linear dampening formula: $\Delta p = -\alpha \times \frac{e}{1 + \beta |e|}$ can oscillate or fail to converge
+    \item Utilization fractions interact with contract capacity in non-obvious ways
+    \item Spot price averaging across heterogeneous states may produce meaningless values
+    \item Multiple feedback loops: contracts affect capacity $\rightarrow$ affects negotiations $\rightarrow$ affects spot prices $\rightarrow$ affects investor decisions $\rightarrow$ affects future contracts
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=red!5,colframe=red!75!black]
+\textbf{Implementation Timeline Risk}
+\begin{itemize}
+    \item Full plan: 18 implementation steps
+    \item Estimated time: 8--12 weeks with testing
+    \item High risk of incomplete implementation within stage timeframe
+    \item Difficult to present partial results if system is non-functional
+\end{itemize}
+\end{tcolorbox}
+
+\subsection{Phase 1 Philosophy: Incremental Validation}
+
+\textbf{Core Principle:} Implement the \underline{minimum} set of features that:
+\begin{enumerate}
+    \item Solves the fundamental problem (investors need feedstock supply certainty)
+    \item Can be tested and validated independently
+    \item Provides measurable value to the model
+    \item Serves as foundation for future enhancements
+\end{enumerate}
+
+\textbf{What We Keep:}
+\begin{itemize}
+    \item[\textcolor{successgreen}{\checkmark}] \textbf{Contract infrastructure} (core value proposition)
+    \item[\textcolor{successgreen}{\checkmark}] \textbf{80--90\% contract + 10--20\% spot} (realistic structure)
+    \item[\textcolor{successgreen}{\checkmark}] \textbf{20-year duration} (long-term commitment realism)
+    \item[\textcolor{successgreen}{\checkmark}] \textbf{Per-state spot prices} (state heterogeneity)
+\end{itemize}
+
+\textbf{What We Postpone:}
+\begin{itemize}
+    \item[\textcolor{red}{$\times$}] \textbf{30-day iterative negotiations} $\rightarrow$ Use fixed prices based on feedstock cost
+    \item[\textcolor{red}{$\times$}] \textbf{Dynamic utilization fractions} $\rightarrow$ Use realistic static capacity estimates
+    \item[\textcolor{red}{$\times$}] \textbf{Non-linear convergence} $\rightarrow$ Not needed without negotiations
+\end{itemize}
+
+\section{Phase 1 Contract System Design}
+
+\subsection{Contract Data Structure}
+
+Create a simple \texttt{FeedstockContract} data class:
+
+\begin{lstlisting}[language=Python, caption=Feedstock Contract Data Class]
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class FeedstockContract:
+    """
+    Represents a long-term feedstock supply contract between
+    an aggregator and an investor's production plant.
+    """
+    contract_id: str
+    investor_id: str
+    aggregator_id: str  # state_id
+    plant_id: str
+
+    # Pricing
+    contract_price: float  # USD/tonne, fixed for duration
+
+    # Timing
+    start_year: int
+    end_year: int  # start_year + duration
+    duration: int = 20  # years
+
+    # Capacity
+    annual_capacity: float  # Plant's max capacity (tonnes/yr)
+    contract_percentage: float  # 0.80 to 0.90
+
+    # Status
+    status: str = "active"  # "active" or "expired"
+
+    @property
+    def contracted_volume(self) -> float:
+        """Annual volume guaranteed by contract."""
+        return self.annual_capacity * self.contract_percentage
+
+    @property
+    def spot_volume(self) -> float:
+        """Annual volume purchased on spot market."""
+        return self.annual_capacity * (1 - self.contract_percentage)
+
+    def is_active(self, current_year: int) -> bool:
+        """Check if contract is currently active."""
+        return (self.start_year <= current_year <= self.end_year
+                and self.status == "active")
+\end{lstlisting}
+
+\subsection{Contract Pricing: Fixed Formula}
+
+\textbf{Problem:} Without negotiations, how do we set contract prices?
+
+\textbf{Solution:} Use a simple, transparent formula based on aggregator's costs:
+
+\begin{equation}
+p_{\text{contract}} = p_{\text{feedstock}} \times (1 + m_{\text{margin}})
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $p_{\text{feedstock}}$ = aggregator's feedstock price (from \texttt{states\_data})
+    \item $m_{\text{margin}}$ = fixed margin (e.g., 10--20\%)
+\end{itemize}
+
+\textbf{Example:}
+\begin{itemize}
+    \item Punjab feedstock price: \$450/tonne
+    \item Margin: 15\%
+    \item Contract price: $450 \times 1.15 = \$517.50$/tonne
+\end{itemize}
+
+\textbf{Advantages:}
+\begin{itemize}
+    \item Simple and predictable
+    \item Reflects aggregator's true costs
+    \item No convergence issues
+    \item Easy to validate and explain
+\end{itemize}
+
+\textbf{Implementation:}
+\begin{lstlisting}[language=Python, caption=Calculate Contract Price]
+def calculate_contract_price(
+    aggregator: FeedstockAggregator,
+    margin: float = 0.15
+) -> float:
+    """
+    Calculate fixed contract price based on feedstock
+    cost plus margin.
+
+    Args:
+        aggregator: Feedstock aggregator agent
+        margin: Markup percentage (default: 15%)
+
+    Returns:
+        Contract price in USD/tonne
+    """
+    base_price = aggregator.feedstock_price
+    contract_price = base_price * (1 + margin)
+    return contract_price
+\end{lstlisting}
+
+\subsection{Spot Market Pricing: Per-State Average}
+
+\textbf{Problem:} States have vastly different feedstock costs (Punjab: \$450, California: \$1,500). Averaging globally is meaningless.
+
+\textbf{Solution:} Maintain \textbf{per-state} spot prices.
+
+For each state, the annual spot price is the average contract price of all new contracts signed in that state this year:
+
+\begin{equation}
+p_{\text{spot}}^{(\text{state})}(t) = \frac{1}{N_{\text{contracts}}^{(\text{state})}} \sum_{j=1}^{N_{\text{contracts}}^{(\text{state})}} p_{\text{contract},j}
+\end{equation}
+
+\textbf{Fallback:} If no new contracts signed in year $t$, use previous year's spot price (or current contract price formula as default).
+
+\begin{lstlisting}[language=Python, caption=Calculate State Spot Price]
+def calculate_state_spot_price(
+    state_id: str,
+    new_contracts_this_year: List[FeedstockContract],
+    previous_spot_price: Optional[float] = None,
+    aggregator: FeedstockAggregator = None
+) -> float:
+    """
+    Calculate annual spot price for a specific state.
+
+    Args:
+        state_id: State identifier
+        new_contracts_this_year: Contracts signed this year
+        previous_spot_price: Fallback if no new contracts
+        aggregator: Fallback to calculate default price
+
+    Returns:
+        Spot price in USD/tonne
+    """
+    state_contracts = [c for c in new_contracts_this_year
+                      if c.aggregator_id == state_id]
+
+    if state_contracts:
+        prices = [c.contract_price for c in state_contracts]
+        return sum(prices) / len(prices)
+    elif previous_spot_price is not None:
+        return previous_spot_price
+    elif aggregator is not None:
+        return calculate_contract_price(aggregator)
+    else:
+        raise ValueError(f"Cannot determine spot price for {state_id}")
+\end{lstlisting}
+
+\subsection{Contract Coverage: Investor Choice}
+
+Each investor chooses contract coverage $\in [0.80, 0.90]$ when signing contract.
+
+\textbf{Phase 1 Approach:} Simple random sampling (emergent, not strategic).
+
+\begin{lstlisting}[language=Python, caption=Investor Decides Contract Percentage]
+import random
+
+def decide_contract_percentage(self) -> float:
+    """
+    Investor chooses what percentage of plant capacity
+    to cover with long-term contract.
+
+    Phase 1: Random uniform sampling in [0.80, 0.90].
+    Phase 2 (Future): Could be based on risk aversion,
+                      price expectations, etc.
+
+    Returns:
+        Contract percentage (0.80 to 0.90)
+    """
+    return random.uniform(0.80, 0.90)
+\end{lstlisting}
+
+\section{Modified Agent Behaviors}
+
+\subsection{Investor Modifications}
+
+\textbf{New Attributes:}
+\begin{lstlisting}[language=Python]
+class Investor(Agent):
+    def __init__(self, ...):
+        # ... existing attributes ...
+        self.contracts: List[FeedstockContract] = []
+\end{lstlisting}
+
+\textbf{New Methods:}
+\begin{lstlisting}[language=Python, caption=Investor Contract Methods]
+def create_contract(
+    self,
+    aggregator: FeedstockAggregator,
+    plant: SAFProductionSite,
+    current_year: int,
+    contract_price: float
+) -> FeedstockContract:
+    """
+    Create a new 20-year feedstock contract for a plant.
+
+    Called when investor decides to invest in new plant.
+    """
+    contract_percentage = self.decide_contract_percentage()
+
+    contract = FeedstockContract(
+        contract_id=f"contract_{plant.site_id}",
+        investor_id=self.investor_id,
+        aggregator_id=aggregator.state_id,
+        plant_id=plant.site_id,
+        contract_price=contract_price,
+        start_year=current_year,
+        end_year=current_year + 20,
+        duration=20,
+        annual_capacity=plant.max_capacity
+                       * plant.design_load_factor,
+        contract_percentage=contract_percentage,
+        status="active"
+    )
+
+    self.contracts.append(contract)
+    return contract
+
+def get_feedstock_cost(
+    self,
+    plant: SAFProductionSite,
+    current_year: int,
+    spot_price: float
+) -> float:
+    """
+    Calculate blended feedstock cost for a plant.
+
+    Returns weighted average of contract price (80-90%)
+    and spot price (10-20%).
+    """
+    # Find active contract for this plant
+    contract = next(
+        (c for c in self.contracts
+         if c.plant_id == plant.site_id
+         and c.is_active(current_year)),
+        None
+    )
+
+    if contract is None:
+        # No contract, use spot price for everything
+        return spot_price
+
+    # Blended price
+    contract_cost = (contract.contract_price
+                    * contract.contract_percentage)
+    spot_cost = spot_price * (1 - contract.contract_percentage)
+
+    return contract_cost + spot_cost
+\end{lstlisting}
+
+\subsection{Feedstock Aggregator Modifications}
+
+\textbf{New Attributes:}
+\begin{lstlisting}[language=Python]
+class FeedstockAggregator(Agent):
+    def __init__(self, ...):
+        # ... existing attributes ...
+        self.active_contracts: List[FeedstockContract] = []
+\end{lstlisting}
+
+\textbf{New Methods:}
+\begin{lstlisting}[language=Python, caption=Aggregator Contract Methods]
+def register_contract(
+    self,
+    contract: FeedstockContract
+) -> None:
+    """
+    Register a new contract with this aggregator.
+    Called by model when investor signs contract.
+    """
+    self.active_contracts.append(contract)
+
+def get_contracted_capacity(
+    self,
+    current_year: int
+) -> float:
+    """
+    Calculate total capacity committed via contracts.
+    """
+    return sum(
+        c.contracted_volume
+        for c in self.active_contracts
+        if c.is_active(current_year)
+    )
+
+def get_available_capacity(
+    self,
+    current_year: int
+) -> float:
+    """
+    Calculate uncontracted capacity available for
+    new investments.
+    """
+    contracted = self.get_contracted_capacity(current_year)
+    return max(0, self.max_supply - contracted)
+\end{lstlisting}
+
+\subsection{SAFProductionSite Modifications}
+
+\textbf{Minimal Changes:} Sites don't need to know about contracts directly.
+
+Contract-aware feedstock pricing is handled by the \texttt{Investor} when calculating SRMC.
+
+\textbf{Modified SRMC Calculation:}
+\begin{lstlisting}[language=Python, caption=Contract-Aware SRMC]
+def calculate_srmc(
+    self,
+    current_year: int,
+    spot_price: float
+) -> float:
+    """
+    Calculate SRMC using blended feedstock cost.
+
+    Called by investor during EBIT calculation.
+    """
+    # Get investor reference
+    investor = next(
+        i for i in self.model.investors
+        if i.investor_id == self.investor_id
+    )
+
+    # Get blended feedstock cost (contract + spot)
+    feedstock_cost = investor.get_feedstock_cost(
+        plant=self,
+        current_year=current_year,
+        spot_price=spot_price
+    )
+
+    return (feedstock_cost
+            + self.opex
+            + self.transport_cost
+            + self.profit_margin)
+\end{lstlisting}
+
+\subsection{Model Modifications}
+
+\textbf{New Attributes:}
+\begin{lstlisting}[language=Python]
+class SAFMarketModel(Model):
+    def __init__(self, ...):
+        # ... existing attributes ...
+        self.all_contracts: List[FeedstockContract] = []
+        self.state_spot_prices: Dict[str, float] = {}
+        self.new_contracts_this_year: List[FeedstockContract] = []
+\end{lstlisting}
+
+\textbf{Modified \texttt{step()} Method:}
+\begin{lstlisting}[language=Python, caption=Modified Model Step]
+def step(self):
+    """
+    Annual simulation step with contract integration.
+    """
+    # Clear this year's new contracts
+    self.new_contracts_this_year = []
+
+    # ... existing: update feedstock availability ...
+
+    # Calculate spot prices for each state
+    current_year = year_for_tick(
+        self.config['start_year'],
+        self.schedule.time
+    )
+
+    for state_id, aggregator in self.aggregators.items():
+        self.state_spot_prices[state_id] = \
+            calculate_state_spot_price(
+                state_id=state_id,
+                new_contracts_this_year=\
+                    self.new_contracts_this_year,
+                previous_spot_price=\
+                    self.state_spot_prices.get(state_id),
+                aggregator=aggregator
+            )
+
+    # ... existing: update_supply, produce ...
+
+    # Update consumer price (SAF market)
+    self.update_consumer_price()
+
+    # ... existing: evaluate agents ...
+
+    # Investment phase (creates new contracts)
+    for agent in self.schedule.agents:
+        agent.invest()
+
+    # Introduce new investor
+    self.new_investor()
+
+    # ... existing: scheduler step, data collection ...
+\end{lstlisting}
+
+\textbf{Modified Investment Logic:}
+\begin{lstlisting}[language=Python, caption=Investment with Contract Creation]
+def investment_mechanism(self, ...):
+    """
+    Modified to create contract when investing.
+    """
+    # ... existing: evaluate all states, find best NPV ...
+
+    if candidate_assets:
+        best_asset, best_site = random.choice(candidate_assets)
+
+        # Get aggregator for this state
+        aggregator = self.model.aggregators[
+            best_asset['state_id']
+        ]
+
+        # Calculate contract price
+        contract_price = calculate_contract_price(
+            aggregator,
+            margin=self.model.config.get(
+                'contract_margin', 0.15
+            )
+        )
+
+        # Create contract
+        contract = self.create_contract(
+            aggregator=aggregator,
+            plant=best_site,
+            current_year=current_tick,
+            contract_price=contract_price
+        )
+
+        # Register contract with model and aggregator
+        self.model.all_contracts.append(contract)
+        self.model.new_contracts_this_year.append(contract)
+        aggregator.register_contract(contract)
+
+        # ... existing: add site to model, update feedstock ...
+\end{lstlisting}
+
+\section{NPV Calculation Updates}
+
+Investors must now account for blended feedstock costs in NPV calculations.
+
+\textbf{Modified NPV Logic:}
+\begin{lstlisting}[language=Python, caption=Contract-Aware NPV Calculation]
+def calculate_npv(
+    self,
+    site: SAFProductionSite,
+    production_output: float,
+    capex_schedule: List[float],
+    contract_price: float,  # NEW PARAMETER
+    start_year: int
+) -> float:
+    """
+    Calculate NPV accounting for contract + spot pricing.
+
+    Assumptions:
+    - Contract covers 80-90% at contract_price
+    - Spot covers 10-20% at forecasted spot price
+    """
+    npv = 0.0
+    contract_percentage = 0.85  # Assume 85% for evaluation
+
+    for t in range(1, self.investment_horizon + 1):
+        year = start_year + t
+
+        # Get forecasted spot price for this year
+        _, spot_forecast = self.get_forecast_price(t)
+        # For simplicity, use same as SAF price forecast
+        # In reality, would need separate feedstock forecast
+
+        if t <= len(capex_schedule):
+            # Construction phase
+            revenue = 0
+            cost = capex_schedule[t - 1]
+        else:
+            # Operational phase
+            # Blended feedstock cost
+            if t <= 20:  # Contract active
+                feedstock_cost = (
+                    contract_price * contract_percentage +
+                    spot_forecast * (1 - contract_percentage)
+                )
+            else:  # Contract expired, all spot
+                feedstock_cost = spot_forecast
+
+            # SRMC with blended cost
+            srmc = (feedstock_cost
+                   + site.opex
+                   + site.transport_cost)
+
+            # Revenue and cost calculation
+            # ... existing logic using srmc ...
+
+        npv += (revenue - cost) / ((1 + self.discount_rate) ** t)
+
+    return npv
+\end{lstlisting}
+
+\section{Implementation Steps (Phase 1)}
+
+\subsection{Step 1: Contract Data Structure}
+\textbf{File:} \texttt{src/Agents/FeedstockContract.py}
+
+\begin{enumerate}
+    \item Create \texttt{FeedstockContract} dataclass
+    \item Add validation methods
+    \item Write unit tests
+\end{enumerate}
+
+\textbf{Estimated Time:} 1 day
+
+\subsection{Step 2: Contract Pricing Functions}
+\textbf{File:} \texttt{src/utils.py} (add to existing)
+
+\begin{enumerate}
+    \item Implement \texttt{calculate\_contract\_price()}
+    \item Implement \texttt{calculate\_state\_spot\_price()}
+    \item Write unit tests with example states
+\end{enumerate}
+
+\textbf{Estimated Time:} 1 day
+
+\subsection{Step 3: Investor Contract Methods}
+\textbf{File:} \texttt{src/Agents/Investor.py}
+
+\begin{enumerate}
+    \item Add \texttt{contracts} attribute
+    \item Implement \texttt{create\_contract()}
+    \item Implement \texttt{get\_feedstock\_cost()}
+    \item Implement \texttt{decide\_contract\_percentage()}
+    \item Update \texttt{calculate\_ebit()} to use blended costs
+    \item Update \texttt{calculate\_npv()} to account for contracts
+\end{enumerate}
+
+\textbf{Estimated Time:} 2--3 days
+
+\subsection{Step 4: Aggregator Contract Methods}
+\textbf{File:} \texttt{src/Agents/Feedstock\_Aggregator.py}
+
+\begin{enumerate}
+    \item Add \texttt{active\_contracts} attribute
+    \item Implement \texttt{register\_contract()}
+    \item Implement \texttt{get\_contracted\_capacity()}
+    \item Implement \texttt{get\_available\_capacity()}
+\end{enumerate}
+
+\textbf{Estimated Time:} 1--2 days
+
+\subsection{Step 5: Model Integration}
+\textbf{File:} \texttt{src/Model.py}
+
+\begin{enumerate}
+    \item Add contract tracking attributes
+    \item Modify \texttt{step()} to calculate spot prices
+    \item Modify investment mechanism to create contracts
+    \item Update feedstock availability to account for contracts
+\end{enumerate}
+
+\textbf{Estimated Time:} 2--3 days
+
+\subsection{Step 6: Data Collection}
+\textbf{File:} \texttt{src/Model.py}
+
+\begin{enumerate}
+    \item Add contract metrics to datacollector:
+    \begin{itemize}
+        \item Model: \texttt{Num\_Active\_Contracts}, \texttt{Total\_Contracted\_Capacity}
+        \item Aggregator: \texttt{State\_Spot\_Price}, \texttt{Contracted\_Capacity}
+        \item Investor: \texttt{Num\_Contracts}, \texttt{Avg\_Contract\_Coverage}
+    \end{itemize}
+    \item Test data export
+\end{enumerate}
+
+\textbf{Estimated Time:} 1 day
+
+\subsection{Step 7: Testing \& Validation}
+\begin{enumerate}
+    \item Test single contract lifecycle (creation $\rightarrow$ 20 years $\rightarrow$ expiration)
+    \item Test multiple investors in same state
+    \item Test spot price calculation with 0, 1, and multiple new contracts
+    \item Verify blended costs are calculated correctly
+    \item Validate NPV calculations include contract pricing
+    \item Run full simulation and inspect outputs
+\end{enumerate}
+
+\textbf{Estimated Time:} 2--3 days
+
+\subsection{Total Estimated Timeline}
+\textbf{Total: 10--14 days} (2--3 weeks with buffer)
+
+Compare to full plan: 8--12 weeks (4--6x faster!)
+
+\section{Configuration Parameters}
+
+Add to \texttt{input/config.csv}:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\hline
+\textbf{Parameter} & \textbf{Default Value} & \textbf{Unit/Remarks} \\
+\hline
+\texttt{contract\_duration} & 20 & years \\
+\texttt{contract\_margin} & 0.15 & 15\% markup on feedstock price \\
+\texttt{contract\_percentage\_min} & 0.80 & Minimum contract coverage \\
+\texttt{contract\_percentage\_max} & 0.90 & Maximum contract coverage \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Success Criteria (Phase 1)}
+
+Phase 1 is complete when:
+
+\begin{itemize}
+    \item[$\checkmark$] Contracts are created when investors build plants
+    \item[$\checkmark$] Contracts last 20 years with correct start/end tracking
+    \item[$\checkmark$] Blended feedstock costs (contract + spot) are calculated correctly
+    \item[$\checkmark$] Spot prices are tracked per-state, not globally
+    \item[$\checkmark$] NPV calculations account for contract pricing
+    \item[$\checkmark$] Data collection includes contract metrics
+    \item[$\checkmark$] Full simulation runs without errors
+    \item[$\checkmark$] Output CSVs show contract data over time
+\end{itemize}
+
+\section{Future Enhancements (Post-Phase 1)}
+
+Once Phase 1 is stable and validated, consider:
+
+\subsection{Phase 2 Options}
+\begin{itemize}
+    \item \textbf{Simple price discovery:} Sealed-bid auction instead of fixed pricing
+    \item \textbf{Contract renegotiation:} Allow price adjustments every 5 years
+    \item \textbf{Spot price forecasting:} Investors forecast future spot prices for NPV
+\end{itemize}
+
+\subsection{Phase 3 Options}
+\begin{itemize}
+    \item \textbf{Capacity dynamics:} Time-varying utilization fractions
+    \item \textbf{Contract flexibility:} Early termination, force majeure clauses
+    \item \textbf{Risk modeling:} Investor risk aversion affects contract percentage choice
+\end{itemize}
+
+\textbf{Decision Point:} Evaluate Phase 1 results before committing to Phase 2/3. If contracts provide sufficient realism and value, additional complexity may not be necessary.
+
+\section{Risk Mitigation}
+
+\subsection{Technical Risks}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{4cm}p{4cm}p{5cm}}
+\hline
+\textbf{Risk} & \textbf{Probability} & \textbf{Mitigation} \\
+\hline
+Contract price too high/low & Medium & Calibrate margin parameter against real data; run sensitivity analysis \\
+\hline
+Spot price volatility & Low & Using average of new contracts smooths prices naturally \\
+\hline
+NPV calculation errors & Medium & Write comprehensive unit tests; validate against hand calculations \\
+\hline
+Integration bugs & Medium & Incremental testing at each step; keep existing model working \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Implementation Risks}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{4cm}p{4cm}p{5cm}}
+\hline
+\textbf{Risk} & \textbf{Probability} & \textbf{Mitigation} \\
+\hline
+Timeline overrun & Low & Simplified scope; clear steps; 2-week timeline is conservative \\
+\hline
+Breaking existing functionality & Low & Modify, don't replace; extensive testing; git version control \\
+\hline
+Unclear requirements & Very Low & This document provides complete specification \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Validation Plan}
+
+\subsection{Unit Tests}
+\begin{enumerate}
+    \item \texttt{test\_contract\_creation()}: Verify all contract fields are set correctly
+    \item \texttt{test\_contract\_expiration()}: Check \texttt{is\_active()} at years 0, 10, 20, 21
+    \item \texttt{test\_blended\_cost()}: Verify 85\% contract + 15\% spot calculation
+    \item \texttt{test\_spot\_price\_averaging()}: Check average with 1, 2, 5 contracts
+    \item \texttt{test\_npv\_with\_contracts()}: Compare NPV with/without contracts
+\end{enumerate}
+
+\subsection{Integration Tests}
+\begin{enumerate}
+    \item \textbf{Scenario 1:} Single investor, single state, 30 years
+    \begin{itemize}
+        \item Verify contract created in year 1
+        \item Verify blended costs years 1--20
+        \item Verify all-spot costs years 21--30
+    \end{itemize}
+
+    \item \textbf{Scenario 2:} Multiple investors, same state, same year
+    \begin{itemize}
+        \item Verify each gets separate contract
+        \item Verify spot price averages correctly
+        \item Verify aggregator tracks all contracts
+    \end{itemize}
+
+    \item \textbf{Scenario 3:} Multi-state, staggered investments
+    \begin{itemize}
+        \item Verify per-state spot prices differ
+        \item Verify contracts don't interfere across states
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Visual Validation}
+Create plots after test runs:
+\begin{itemize}
+    \item \textbf{Contract lifecycle:} Count of active contracts over time
+    \item \textbf{Price comparison:} Contract price vs. spot price per state
+    \item \textbf{Feedstock costs:} Blended cost over plant lifetime
+    \item \textbf{Capacity allocation:} Contracted vs. available capacity per state
+\end{itemize}
+
+\section{Conclusion}
+
+This Phase 1 implementation provides a \textbf{minimum viable contract system} that:
+
+\begin{enumerate}
+    \item Solves the core problem: long-term feedstock supply certainty
+    \item Adds realistic market structure: 80--90\% contracts + 10--20\% spot
+    \item Maintains simplicity: fixed pricing, no negotiations
+    \item Enables validation: clear inputs/outputs, testable components
+    \item Reduces risk: 2--3 week timeline vs. 8--12 weeks for full plan
+\end{enumerate}
+
+\textbf{Key Advantage:} If Phase 1 reveals fundamental issues (e.g., contracts don't affect investor behavior meaningfully), we discover this quickly without investing months in complex negotiation mechanisms.
+
+\textbf{Next Steps:}
+\begin{enumerate}
+    \item Review and approve this plan
+    \item Set up git branch for contract implementation
+    \item Begin Step 1: Contract data structure
+    \item Test incrementally at each step
+    \item Evaluate results before considering Phase 2
+\end{enumerate}
+
+\end{document}
