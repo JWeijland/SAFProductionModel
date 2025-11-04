@@ -446,17 +446,26 @@ class Investor(Agent):
 
         # CLAUDE START - Phase 2: Pass contract pricing to NPV calculation
         # Use feedstock price as the contract price (contracts only cover feedstock, not full SRMC)
-        contract_price = site.aggregator.feedstock_price
-        start_year = year_for_tick(
-            int(self.model.config["start_year"]),
-            current_tick
+        base_feedstock_price = site.aggregator.feedstock_price
+
+        # CLAUDE START - Phase 2 FIX: Apply same escalation as in create_contract
+        # NPV calculation must use the same escalated price that the contract will have
+        model_start_year = int(self.model.config["start_year"])
+        current_year_for_npv = year_for_tick(model_start_year, current_tick)
+        years_since_model_start = current_year_for_npv - model_start_year
+        escalation_rate = float(self.model.config.get("contract_escalation_rate", 0.03))
+
+        # Escalate base price to current market level
+        contract_price = base_feedstock_price * (
+            (1 + escalation_rate) ** years_since_model_start
         )
+        # CLAUDE END - Phase 2 FIX: Apply same escalation as in create_contract
 
         npv: float = self.calculate_npv(
 
             site, production_output, srmc_no_profit, capex_schedule,
             contract_price=contract_price,
-            start_year=start_year
+            start_year=current_year_for_npv
 
         )
         # CLAUDE END - Phase 2: Pass contract pricing to NPV calculation
@@ -1379,15 +1388,32 @@ class Investor(Agent):
 
         # CLAUDE START - Phase 2 BUG FIX: Contract should only cover feedstock, not full SRMC
         # Use aggregator's feedstock price, not full SRMC (which includes opex + transport + profit)
-        feedstock_price = aggregator.feedstock_price
+        base_feedstock_price = aggregator.feedstock_price  # Base price from CSV
 
-        # Create contract using feedstock price (not SRMC!)
+        # CLAUDE START - Phase 2 FIX: Escalate base price for market realism
+        # New contracts should reflect market escalation over time
+        # Otherwise new plants are always cheaper than old plants (unrealistic!)
+        start_year = int(self.model.config["start_year"])
+        years_since_model_start = current_year - start_year
+
+        # Escalate the base feedstock price to current market level
+        escalated_base_price = base_feedstock_price * (
+            (1 + escalation_rate) ** years_since_model_start
+        )
+
+        logger.info(
+            f"Contract feedstock price: Base ${base_feedstock_price:.2f} → "
+            f"Escalated ${escalated_base_price:.2f} (after {years_since_model_start} years)"
+        )
+        # CLAUDE END - Phase 2 FIX: Escalate base price for market realism
+
+        # Create contract using escalated feedstock price
         contract = FeedstockContract(
             contract_id=f"contract_{plant.site_id}",
             investor_id=self.investor_id,
             aggregator_id=aggregator.state_id,
             plant_id=plant.site_id,
-            initial_contract_price=feedstock_price,  # FIXED: Use feedstock price only
+            initial_contract_price=escalated_base_price,  # FIXED: Use escalated market price
             start_year=current_year,
             end_year=current_year + duration,
             annual_capacity=plant.max_capacity * plant.design_load_factor,
@@ -1403,7 +1429,7 @@ class Investor(Agent):
 
         logger.info(
             f"Investor {self.investor_id} created contract {contract.contract_id}: "
-            f"{contract_percentage:.1%} coverage at ${feedstock_price:.2f}/tonne (feedstock only)"
+            f"{contract_percentage:.1%} coverage at ${escalated_base_price:.2f}/tonne (escalated from ${base_feedstock_price:.2f})"
         )
 
         return contract

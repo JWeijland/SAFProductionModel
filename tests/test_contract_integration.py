@@ -35,6 +35,9 @@ class TestContractIntegration:
             "contract_escalation_rate": 0.03,
             "contract_percentage_min": 0.80,
             "contract_percentage_max": 0.90,
+            # CLAUDE START - Phase 2 FIX: Add start_year for escalation calculation
+            "start_year": 2024,  # Model started in 2024
+            # CLAUDE END - Phase 2 FIX
         }
 
         # Create mock aggregator
@@ -72,14 +75,17 @@ class TestContractIntegration:
         assert contract.investor_id == "inv_01"
         assert contract.aggregator_id == "PUNJAB"
         assert contract.plant_id == "site_001"
-        # CLAUDE START - Phase 2 BUG FIX: Contract price should be feedstock price, not SRMC
-        assert contract.initial_contract_price == 450.0  # aggregator.feedstock_price (not plant.srmc!)
-        # CLAUDE END - Phase 2 BUG FIX
+        # CLAUDE START - Phase 2 FIX: Contract price is escalated from base
+        # 2025 is 1 year after 2024 start, so: $450 * 1.03^1 = $463.50
+        expected_price = 450.0 * (1.03 ** 1)
+        assert abs(contract.initial_contract_price - expected_price) < 0.01
+        # CLAUDE END - Phase 2 FIX
         assert contract.start_year == 2025
         assert contract.end_year == 2045
         assert 0.80 <= contract.contract_percentage <= 0.90
 
         print(f"✓ Investor created contract with {contract.contract_percentage:.1%} coverage")
+        print(f"  Initial contract price: ${contract.initial_contract_price:.2f} (escalated from base $450.00)")
 
     def test_aggregator_registers_and_tracks_contracts(self):
         """Test: Aggregator can register and track multiple contracts."""
