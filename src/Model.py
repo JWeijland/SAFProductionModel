@@ -100,6 +100,23 @@ class SAFMarketModel(Model):
                 "Num_Production_Sites": lambda m: len(
                     getattr(m, "production_sites", [])
                 ),
+                # CLAUDE START - Contract metrics for Phase 1 implementation
+                "Num_Active_Contracts": lambda m: len([
+                    c for c in getattr(m, "all_contracts", [])
+                    if c.is_active(year_for_tick(
+                        int(m.config["start_year"]),
+                        int(m.schedule.time)
+                    ))
+                ]),
+                "Total_Contracted_Capacity": lambda m: sum(
+                    c.contracted_volume
+                    for c in getattr(m, "all_contracts", [])
+                    if c.is_active(year_for_tick(
+                        int(m.config["start_year"]),
+                        int(m.schedule.time)
+                    ))
+                ),
+                # CLAUDE END - Contract metrics for Phase 1 implementation
             },
             agent_reporters={
                 # Prefer agent.current_tick; fall back to agent.tick or scheduler time
@@ -199,6 +216,34 @@ class SAFMarketModel(Model):
                     if hasattr(a, "num_owned_assets")
                     else 0
                 ),
+                # CLAUDE START - Contract metrics for agents (Phase 1 implementation)
+                # For FeedstockAggregator agents
+                "State_Spot_Price": lambda a: (
+                    a.model.state_spot_prices.get(a.state_id)
+                    if hasattr(a, "state_id")
+                    and hasattr(a.model, "state_spot_prices")
+                    else None
+                ),
+                "Aggregator_Contracted_Capacity": lambda a: (
+                    a.get_contracted_capacity(year_for_tick(
+                        int(a.model.config["start_year"]),
+                        int(a.model.schedule.time)
+                    ))
+                    if hasattr(a, "get_contracted_capacity")
+                    else None
+                ),
+                # For Investor agents
+                "Num_Contracts": lambda a: (
+                    len(getattr(a, "contracts", []))
+                    if hasattr(a, "contracts")
+                    else None
+                ),
+                "Avg_Contract_Coverage": lambda a: (
+                    (sum(c.contract_percentage for c in a.contracts) / len(a.contracts))
+                    if hasattr(a, "contracts") and len(a.contracts) > 0
+                    else None
+                ),
+                # CLAUDE END - Contract metrics for agents (Phase 1 implementation)
             },
         )
  
