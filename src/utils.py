@@ -248,3 +248,150 @@ def tick_for_year(start_year, year: int) -> int:
     return int(year) - int(start_year)
  
  
+# CLAUDE START - Contract pricing functions for Phase 1 implementation
+def calculate_initial_contract_price(site) -> float:
+    """
+    Calculate initial contract price based on site's SRMC.
+
+    In Phase 1, contract price equals the full SRMC (Short-Run Marginal Cost)
+    of the production site at the time of contract signing.
+
+    SRMC includes:
+    - Feedstock price
+    - OPEX (operating expenses)
+    - Transport cost
+    - Profit margin
+
+    This price will then be escalated annually (handled by FeedstockContract).
+
+    Parameters:
+        site: SAFProductionSite instance
+
+    Returns:
+        Initial contract price in USD/tonne (equals site.srmc)
+
+    Example:
+        >>> site = SAFProductionSite(...)  # site with srmc = 600.0
+        >>> price = calculate_initial_contract_price(site)
+        >>> print(price)
+        600.0
+    """
+    return site.srmc
+
+
+def calculate_state_spot_price(
+    state_id: str,
+    new_contracts_this_year: List,
+    previous_spot_price: float = None,
+    aggregator = None,
+    default_price: float = 700.0
+) -> float:
+    """
+    Calculate annual spot price for a specific state.
+
+    The spot price is the average of all new contract prices signed in that
+    state during the current year. This creates a state-specific market price
+    that reflects local supply/demand conditions.
+
+    Logic:
+    1. Filter contracts for this state from new_contracts_this_year
+    2. If contracts exist: return average of their initial prices
+    3. If no contracts: use previous_spot_price (carry forward)
+    4. If no previous price: calculate from aggregator SRMC
+    5. If no aggregator: use default_price as fallback
+
+    Parameters:
+        state_id: State identifier (e.g., "PUNJAB", "MAHARASHTRA")
+        new_contracts_this_year: List of FeedstockContract objects signed this year
+        previous_spot_price: Spot price from previous year (fallback)
+        aggregator: FeedstockAggregator for this state (for SRMC calculation)
+        default_price: Final fallback price if all else fails
+
+    Returns:
+        Spot price for this state in USD/tonne
+
+    Example:
+        >>> contracts = [
+        ...     FeedstockContract(..., aggregator_id="PUNJAB", initial_contract_price=600.0),
+        ...     FeedstockContract(..., aggregator_id="PUNJAB", initial_contract_price=620.0),
+        ...     FeedstockContract(..., aggregator_id="MAHARASHTRA", initial_contract_price=550.0)
+        ... ]
+        >>> price = calculate_state_spot_price("PUNJAB", contracts)
+        >>> print(price)
+        610.0  # Average of 600 and 620
+    """
+    # Filter contracts for this specific state
+    state_contracts = [
+        c for c in new_contracts_this_year
+        if c.aggregator_id == state_id
+    ]
+
+    # Case 1: New contracts exist - use their average
+    if state_contracts:
+        prices = [c.initial_contract_price for c in state_contracts]
+        return sum(prices) / len(prices)
+
+    # Case 2: No new contracts - use previous year's price
+    if previous_spot_price is not None:
+        logger.info(
+            f"No new contracts for {state_id}, using previous spot price: "
+            f"${previous_spot_price:.2f}/tonne"
+        )
+        return previous_spot_price
+
+    # Case 3: No previous price - calculate from aggregator
+    if aggregator is not None:
+        # Create a temporary site to get SRMC (includes all cost components)
+        # We can't import SAFProductionSite here due to circular imports,
+        # so we calculate SRMC components directly
+        feedstock_price = aggregator.feedstock_price
+
+        # These would come from config, but for fallback we use reasonable defaults
+        # In actual usage, aggregator should always be provided
+        estimated_srmc = feedstock_price * 1.3  # ~30% markup for opex/transport/margin
+
+        logger.info(
+            f"No contracts or previous price for {state_id}, "
+            f"using estimated SRMC: ${estimated_srmc:.2f}/tonne"
+        )
+        return estimated_srmc
+
+    # Case 4: Complete fallback
+    logger.warning(
+        f"Cannot determine spot price for {state_id}, "
+        f"using default: ${default_price:.2f}/tonne"
+    )
+    return default_price
+
+
+def get_contract_price_for_year(
+    initial_price: float,
+    years_elapsed: int,
+    escalation_rate: float = 0.03
+) -> float:
+    """
+    Calculate escalated contract price for a specific year.
+
+    This is a helper function that can be used independently of the
+    FeedstockContract class for NPV calculations and forecasting.
+
+    Formula: p(t) = p_0 × (1 + r)^t
+
+    Parameters:
+        initial_price: Contract price at signing (USD/tonne)
+        years_elapsed: Years since contract start
+        escalation_rate: Annual escalation rate (default: 0.03 = 3%)
+
+    Returns:
+        Escalated price in USD/tonne
+
+    Example:
+        >>> price_year_5 = get_contract_price_for_year(600.0, 5, 0.03)
+        >>> print(f"${price_year_5:.2f}")
+        $695.46
+    """
+    if years_elapsed < 0:
+        raise ValueError(f"years_elapsed must be non-negative, got {years_elapsed}")
+
+    return initial_price * ((1 + escalation_rate) ** years_elapsed)
+# CLAUDE END - Contract pricing functions for Phase 1 implementation
