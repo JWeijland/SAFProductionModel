@@ -72,7 +72,9 @@ class TestContractIntegration:
         assert contract.investor_id == "inv_01"
         assert contract.aggregator_id == "PUNJAB"
         assert contract.plant_id == "site_001"
-        assert contract.initial_contract_price == 600.0
+        # CLAUDE START - Phase 2 BUG FIX: Contract price should be feedstock price, not SRMC
+        assert contract.initial_contract_price == 450.0  # aggregator.feedstock_price (not plant.srmc!)
+        # CLAUDE END - Phase 2 BUG FIX
         assert contract.start_year == 2025
         assert contract.end_year == 2045
         assert 0.80 <= contract.contract_percentage <= 0.90

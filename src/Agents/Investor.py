@@ -445,7 +445,7 @@ class Investor(Agent):
         capex_schedule: List = self.capex_schedule
 
         # CLAUDE START - Phase 2: Pass contract pricing to NPV calculation
-        # Use site's SRMC as the contract price (this will be the initial contract price)
+        # Use feedstock price as the contract price (contracts only cover feedstock, not full SRMC)
         contract_price = site.aggregator.feedstock_price
         start_year = year_for_tick(
             int(self.model.config["start_year"]),
@@ -1377,13 +1377,17 @@ class Investor(Agent):
         duration = int(self.model.config.get("contract_duration", 20))
         escalation_rate = float(self.model.config.get("contract_escalation_rate", 0.03))
 
-        # Create contract using plant's SRMC as initial price
+        # CLAUDE START - Phase 2 BUG FIX: Contract should only cover feedstock, not full SRMC
+        # Use aggregator's feedstock price, not full SRMC (which includes opex + transport + profit)
+        feedstock_price = aggregator.feedstock_price
+
+        # Create contract using feedstock price (not SRMC!)
         contract = FeedstockContract(
             contract_id=f"contract_{plant.site_id}",
             investor_id=self.investor_id,
             aggregator_id=aggregator.state_id,
             plant_id=plant.site_id,
-            initial_contract_price=plant.srmc,
+            initial_contract_price=feedstock_price,  # FIXED: Use feedstock price only
             start_year=current_year,
             end_year=current_year + duration,
             annual_capacity=plant.max_capacity * plant.design_load_factor,
@@ -1392,13 +1396,14 @@ class Investor(Agent):
             duration=duration,
             status="active"
         )
+        # CLAUDE END - Phase 2 BUG FIX
 
         # Add to investor's contract list
         self.contracts.append(contract)
 
         logger.info(
             f"Investor {self.investor_id} created contract {contract.contract_id}: "
-            f"{contract_percentage:.1%} coverage at ${plant.srmc:.2f}/tonne"
+            f"{contract_percentage:.1%} coverage at ${feedstock_price:.2f}/tonne (feedstock only)"
         )
 
         return contract
