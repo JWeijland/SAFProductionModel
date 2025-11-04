@@ -2,9 +2,15 @@ from mesa import Agent
 
 import random
 
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List
 
 import logging
+
+# CLAUDE START - Import for Phase 1 contract implementation
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from src.Agents.FeedstockContract import FeedstockContract
+# CLAUDE END - Import for Phase 1 contract implementation
 
  
 
@@ -134,7 +140,11 @@ class FeedstockAggregator(Agent):
 
             raise ValueError("feedstock_price must be non-negative.")
 
- 
+        # CLAUDE START - Contract tracking for Phase 1 implementation
+        self.active_contracts: List['FeedstockContract'] = []
+        # CLAUDE END - Contract tracking for Phase 1 implementation
+
+
 
     def sample_current_supply(self) -> Tuple[float, float]:
 
@@ -224,7 +234,77 @@ class FeedstockAggregator(Agent):
 
         pass
 
- 
+    # CLAUDE START - Contract management methods for Phase 1 implementation
+    def register_contract(self, contract: 'FeedstockContract') -> None:
+        """
+        Register a new contract with this aggregator.
+
+        Called by model when an investor signs a contract for feedstock
+        from this state.
+
+        Parameters:
+            contract: FeedstockContract to register
+
+        Side effects:
+            - Adds contract to active_contracts list
+        """
+        self.active_contracts.append(contract)
+
+        logging.info(
+            f"Aggregator {self.state_id} registered contract {contract.contract_id}: "
+            f"{contract.contracted_volume:.0f} tonnes/year for {contract.duration} years"
+        )
+
+    def get_contracted_capacity(self, current_year: int) -> float:
+        """
+        Calculate total capacity committed via active contracts.
+
+        This is the amount of feedstock that is already pledged to
+        existing contracts in the given year.
+
+        Parameters:
+            current_year: Year to check contracts for
+
+        Returns:
+            Total contracted volume in tonnes/year
+        """
+        total_contracted = sum(
+            contract.contracted_volume
+            for contract in self.active_contracts
+            if contract.is_active(current_year)
+        )
+
+        return total_contracted
+
+    def get_available_capacity(self, current_year: int) -> float:
+        """
+        Calculate uncontracted capacity available for new investments.
+
+        This is max_supply minus already contracted capacity.
+
+        Parameters:
+            current_year: Year to check availability for
+
+        Returns:
+            Available capacity in tonnes/year
+
+        Note:
+            Result can be negative if contracts exceed max_supply
+            (shouldn't happen in normal operation)
+        """
+        contracted = self.get_contracted_capacity(current_year)
+        available = self.max_supply - contracted
+
+        logging.debug(
+            f"Aggregator {self.state_id} year {current_year}: "
+            f"max={self.max_supply:.0f}, contracted={contracted:.0f}, "
+            f"available={available:.0f} tonnes/year"
+        )
+
+        return max(0, available)
+    # CLAUDE END - Contract management methods for Phase 1 implementation
+
+
 
     def __repr__(self) -> str:
 
