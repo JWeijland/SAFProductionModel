@@ -138,7 +138,8 @@ class FeedstockContract:
     plant_id: str
 
     # Pricing
-    contract_price: float  # USD/tonne, fixed for duration
+    initial_contract_price: float  # USD/tonne, SRMC at signing
+    escalation_rate: float = 0.03  # Annual increase (3%)
 
     # Timing
     start_year: int
@@ -162,68 +163,94 @@ class FeedstockContract:
         """Annual volume purchased on spot market."""
         return self.annual_capacity * (1 - self.contract_percentage)
 
+    def get_price_for_year(self, current_year: int) -> float:
+        """Get escalated contract price for specific year."""
+        years_elapsed = current_year - self.start_year
+        return (self.initial_contract_price
+                * ((1 + self.escalation_rate) ** years_elapsed))
+
     def is_active(self, current_year: int) -> bool:
         """Check if contract is currently active."""
         return (self.start_year <= current_year <= self.end_year
                 and self.status == "active")
 \end{lstlisting}
 
-\subsection{Contract Pricing: Fixed Formula}
+\subsection{Contract Pricing: SRMC with Annual Escalation}
 
 \textbf{Problem:} Without negotiations, how do we set contract prices?
 
-\textbf{Solution:} Use a simple, transparent formula based on aggregator's costs:
+\textbf{Solution:} Use the full SRMC (Short-Run Marginal Cost) at contract signing, with annual price escalation to reflect inflation.
 
 \begin{equation}
-p_{\text{contract}} = p_{\text{feedstock}} \times (1 + m_{\text{margin}})
+p_{\text{contract}}(t) = \text{SRMC}_0 \times (1 + r_{\text{escalation}})^{t}
 \end{equation}
 
 where:
 \begin{itemize}
-    \item $p_{\text{feedstock}}$ = aggregator's feedstock price (from \texttt{states\_data})
-    \item $m_{\text{margin}}$ = fixed margin (e.g., 10--20\%)
+    \item $\text{SRMC}_0$ = feedstock price + opex + transport cost + profit margin (at year 0)
+    \item $r_{\text{escalation}}$ = annual price increase rate (e.g., 3\%)
+    \item $t$ = years since contract start
 \end{itemize}
 
 \textbf{Example:}
 \begin{itemize}
     \item Punjab feedstock price: \$450/tonne
-    \item Margin: 15\%
-    \item Contract price: $450 \times 1.15 = \$517.50$/tonne
+    \item OPEX: \$50/tonne
+    \item Transport: \$30/tonne
+    \item Profit margin: \$70/tonne
+    \item Initial SRMC: $450 + 50 + 30 + 70 = \$600$/tonne
+    \item Year 5 contract price: $600 \times 1.03^5 = \$695.46$/tonne
 \end{itemize}
 
 \textbf{Advantages:}
 \begin{itemize}
+    \item Reflects true production cost (not just feedstock)
+    \item Annual escalation maintains real value over 20 years
     \item Simple and predictable
-    \item Reflects aggregator's true costs
     \item No convergence issues
     \item Easy to validate and explain
 \end{itemize}
 
 \textbf{Implementation:}
-\begin{lstlisting}[language=Python, caption=Calculate Contract Price]
-def calculate_contract_price(
-    aggregator: FeedstockAggregator,
-    margin: float = 0.15
+\begin{lstlisting}[language=Python, caption=Calculate Contract Price with Escalation]
+def calculate_initial_contract_price(
+    site: SAFProductionSite,
+    config: dict
 ) -> float:
     """
-    Calculate fixed contract price based on feedstock
-    cost plus margin.
+    Calculate initial contract price based on full SRMC.
 
     Args:
-        aggregator: Feedstock aggregator agent
-        margin: Markup percentage (default: 15%)
+        site: Production site (for SRMC calculation)
+        config: Model configuration
 
     Returns:
-        Contract price in USD/tonne
+        Initial contract price in USD/tonne
     """
-    base_price = aggregator.feedstock_price
-    contract_price = base_price * (1 + margin)
-    return contract_price
+    return site.srmc  # Already includes all cost components
+
+def get_contract_price_for_year(
+    initial_price: float,
+    years_elapsed: int,
+    escalation_rate: float = 0.03
+) -> float:
+    """
+    Calculate contract price for a specific year.
+
+    Args:
+        initial_price: SRMC at contract signing
+        years_elapsed: Years since contract start
+        escalation_rate: Annual escalation (default: 3%)
+
+    Returns:
+        Escalated contract price in USD/tonne
+    """
+    return initial_price * ((1 + escalation_rate) ** years_elapsed)
 \end{lstlisting}
 
 \subsection{Spot Market Pricing: Per-State Average}
 
-\textbf{Problem:} States have vastly different feedstock costs (Punjab: \$450, California: \$1,500). Averaging globally is meaningless.
+\textbf{Problem:} Different Indian states have varying feedstock costs (e.g., Punjab: \$450/tonne, Maharashtra: \$520/tonne, Karnataka: \$480/tonne). Averaging globally would obscure state-specific market conditions.
 
 \textbf{Solution:} Maintain \textbf{per-state} spot prices.
 
@@ -716,7 +743,7 @@ Add to \texttt{input/config.csv}:
 \textbf{Parameter} & \textbf{Default Value} & \textbf{Unit/Remarks} \\
 \hline
 \texttt{contract\_duration} & 20 & years \\
-\texttt{contract\_margin} & 0.15 & 15\% markup on feedstock price \\
+\texttt{contract\_escalation\_rate} & 0.03 & 3\% annual price increase \\
 \texttt{contract\_percentage\_min} & 0.80 & Minimum contract coverage \\
 \texttt{contract\_percentage\_max} & 0.90 & Maximum contract coverage \\
 \hline
@@ -800,36 +827,19 @@ Unclear requirements & Very Low & This document provides complete specification 
 
 \section{Validation Plan}
 
-\subsection{Unit Tests}
+\subsection{Unit Tests (Keep Simple)}
 \begin{enumerate}
-    \item \texttt{test\_contract\_creation()}: Verify all contract fields are set correctly
-    \item \texttt{test\_contract\_expiration()}: Check \texttt{is\_active()} at years 0, 10, 20, 21
-    \item \texttt{test\_blended\_cost()}: Verify 85\% contract + 15\% spot calculation
-    \item \texttt{test\_spot\_price\_averaging()}: Check average with 1, 2, 5 contracts
-    \item \texttt{test\_npv\_with\_contracts()}: Compare NPV with/without contracts
+    \item \texttt{test\_contract\_creation()}: Verify contract fields correct
+    \item \texttt{test\_contract\_active\_years()}: Check active at year 10, expired at year 21
+    \item \texttt{test\_price\_escalation()}: Verify $p_0 \times 1.03^5 = p_5$
+    \item \texttt{test\_blended\_cost()}: Verify $0.85 \times p_{\text{contract}} + 0.15 \times p_{\text{spot}}$
 \end{enumerate}
 
-\subsection{Integration Tests}
+\subsection{Integration Tests (Keep Focused)}
 \begin{enumerate}
-    \item \textbf{Scenario 1:} Single investor, single state, 30 years
-    \begin{itemize}
-        \item Verify contract created in year 1
-        \item Verify blended costs years 1--20
-        \item Verify all-spot costs years 21--30
-    \end{itemize}
-
-    \item \textbf{Scenario 2:} Multiple investors, same state, same year
-    \begin{itemize}
-        \item Verify each gets separate contract
-        \item Verify spot price averages correctly
-        \item Verify aggregator tracks all contracts
-    \end{itemize}
-
-    \item \textbf{Scenario 3:} Multi-state, staggered investments
-    \begin{itemize}
-        \item Verify per-state spot prices differ
-        \item Verify contracts don't interfere across states
-    \end{itemize}
+    \item \textbf{Single contract lifecycle:} 1 investor, 1 state, 25 years. Check contract expires year 20.
+    \item \textbf{Multiple contracts same state:} 3 investors, 1 state. Check spot price = avg of 3 contract prices.
+    \item \textbf{Per-state independence:} 2 states, different prices. Check spot prices don't mix.
 \end{enumerate}
 
 \subsection{Visual Validation}
@@ -863,5 +873,91 @@ This Phase 1 implementation provides a \textbf{minimum viable contract system} t
     \item Test incrementally at each step
     \item Evaluate results before considering Phase 2
 \end{enumerate}
+
+\section{Git Workflow: Creating a Branch}
+
+\textbf{Before starting implementation, create a feature branch to isolate contract changes from main codebase.}
+
+\subsection{Create and Switch to New Branch}
+
+\begin{lstlisting}[language=bash, caption=Create Branch for Contract Implementation]
+# Check current status and branch
+git status
+git branch
+
+# Create new branch and switch to it (one command)
+git checkout -b feature/feedstock-contracts
+
+# Or create and switch in two steps:
+git branch feature/feedstock-contracts
+git checkout feature/feedstock-contracts
+
+# Verify you're on the new branch
+git branch
+# Should show: * feature/feedstock-contracts
+\end{lstlisting}
+
+\subsection{Work on the Branch}
+
+As you implement each step:
+\begin{lstlisting}[language=bash]
+# Make changes to files...
+
+# Check what changed
+git status
+
+# Add changes
+git add src/Agents/FeedstockContract.py
+# Or add all: git add .
+
+# Commit with descriptive message
+git commit -m "Add FeedstockContract dataclass with escalation"
+
+# Continue working...
+# Commit regularly (after each completed step)
+\end{lstlisting}
+
+\subsection{Stay Synced with Main}
+
+If others are working on main branch:
+\begin{lstlisting}[language=bash]
+# Switch to main and update
+git checkout master  # or main
+git pull
+
+# Switch back to feature branch
+git checkout feature/feedstock-contracts
+
+# Merge main into feature branch to stay current
+git merge master
+
+# Resolve any conflicts if they occur
+# Then continue working
+\end{lstlisting}
+
+\subsection{When Phase 1 is Complete}
+
+\begin{lstlisting}[language=bash]
+# Final commit
+git add .
+git commit -m "Complete Phase 1: contract infrastructure tested"
+
+# Switch to main
+git checkout master
+
+# Merge feature branch into main
+git merge feature/feedstock-contracts
+
+# Delete feature branch (optional, after successful merge)
+git branch -d feature/feedstock-contracts
+\end{lstlisting}
+
+\textbf{Advantage of Branching:}
+\begin{itemize}
+    \item Main branch stays stable and runnable
+    \item Easy to abandon feature if fundamental issues arise
+    \item Can switch back to main anytime to test original model
+    \item Clear separation between working code and experimental code
+\end{itemize}
 
 \end{document}
