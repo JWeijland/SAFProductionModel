@@ -674,6 +674,36 @@ class Investor(Agent):
 
             self.model.states_available_feedstock[best_asset['state_id']] -= best_site.max_capacity * best_site.design_load_factor
 
+            # CLAUDE START - Create feedstock contract for new plant
+            # Get the aggregator for this state
+            aggregator = aggregators[best_asset['state_id']]
+
+            # Get current year for contract
+            from src.utils import year_for_tick
+            current_year = year_for_tick(
+                int(self.model.config["start_year"]),
+                current_tick
+            )
+
+            # Create contract
+            contract = self.create_contract(
+                aggregator=aggregator,
+                plant=best_site,
+                current_year=current_year
+            )
+
+            # Register contract with model and aggregator
+            self.model.all_contracts.append(contract)
+            self.model.new_contracts_this_year.append(contract)
+            aggregator.register_contract(contract)
+
+            logger.info(
+                f"Created contract {contract.contract_id} with "
+                f"{contract.contract_percentage:.1%} coverage at "
+                f"${contract.initial_contract_price:.2f}/tonne"
+            )
+            # CLAUDE END - Create feedstock contract for new plant
+
         else:
 
             logger.info("No investment made this year.")

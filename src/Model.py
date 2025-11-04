@@ -5,6 +5,9 @@ from mesa.time import RandomActivation
 from src.Agents.Feedstock_Aggregator import FeedstockAggregator
 from src.Agents.SAF_Production_Site import SAFProductionSite
 from src.Agents.Investor import Investor
+# CLAUDE START - Import for Phase 1 contract implementation
+from src.Agents.FeedstockContract import FeedstockContract
+# CLAUDE END - Import for Phase 1 contract implementation
 import random
 from src.utils import (
     calculate_consumer_price,
@@ -12,6 +15,9 @@ from src.utils import (
     find_operational_sites,
     get_saf_demand_forecast,
     year_for_tick,
+    # CLAUDE START - Import contract pricing functions
+    calculate_state_spot_price,
+    # CLAUDE END - Import contract pricing functions
 )
 import logging
 import os
@@ -310,7 +316,56 @@ class SAFMarketModel(Model):
             )
             for asset, _ in investor.owned_assets:
                 logging.info(f"  Asset {asset['site_id']}")
- 
+
+        # CLAUDE START - Contract tracking attributes for Phase 1 implementation
+        self.all_contracts = []  # Global list of all contracts
+        self.state_spot_prices = {}  # Dict mapping state_id -> spot price
+        self.new_contracts_this_year = []  # Contracts signed this tick
+        # CLAUDE END - Contract tracking attributes for Phase 1 implementation
+
+        # CLAUDE START - Create contracts for initial sites
+        logging.info("Creating initial feedstock contracts...")
+        for site in self.production_sites:
+            # Find the investor that owns this site
+            investor = next(
+                i for i in self.investors
+                if i.investor_id == site.investor_id
+            )
+
+            # Get the aggregator for this site's state
+            aggregator = self.aggregators[site.state_id]
+
+            # Create contract (year 0)
+            current_year = int(self.config["start_year"])
+            contract = investor.create_contract(
+                aggregator=aggregator,
+                plant=site,
+                current_year=current_year
+            )
+
+            # Register contract
+            self.all_contracts.append(contract)
+            self.new_contracts_this_year.append(contract)
+            aggregator.register_contract(contract)
+
+            logging.info(
+                f"Initial contract {contract.contract_id}: "
+                f"{contract.contract_percentage:.1%} @ ${contract.initial_contract_price:.2f}/tonne"
+            )
+
+        # Calculate initial spot prices
+        for state_id, aggregator in self.aggregators.items():
+            self.state_spot_prices[state_id] = calculate_state_spot_price(
+                state_id=state_id,
+                new_contracts_this_year=self.new_contracts_this_year,
+                aggregator=aggregator
+            )
+            logging.info(
+                f"Initial spot price for {state_id}: "
+                f"${self.state_spot_prices[state_id]:.2f}/tonne"
+            )
+        # CLAUDE END - Create contracts for initial sites
+
         # Collect initial snapshot at tick 0
         self.datacollector.collect(self)
  
@@ -336,6 +391,10 @@ class SAFMarketModel(Model):
             - May add new investors and/or sites to the scheduler and model state.
             - Appends records to the DataCollector.
         """
+        # CLAUDE START - Clear contracts from previous year
+        self.new_contracts_this_year = []
+        # CLAUDE END - Clear contracts from previous year
+
  
         self.states_available_feedstock = {
             state_id: aggregator.max_supply
@@ -369,6 +428,21 @@ class SAFMarketModel(Model):
             investor.consumer_price_forecast = updated_forecast
             investor.current_tick = self.schedule.time
  
+        # CLAUDE START - Calculate spot prices for each state
+        current_year = year_for_tick(self.config["start_year"], self.schedule.time)
+        for state_id, aggregator in self.aggregators.items():
+            self.state_spot_prices[state_id] = calculate_state_spot_price(
+                state_id=state_id,
+                new_contracts_this_year=self.new_contracts_this_year,
+                previous_spot_price=self.state_spot_prices.get(state_id),
+                aggregator=aggregator
+            )
+            logger.debug(
+                f"State {state_id} spot price: "
+                f"${self.state_spot_prices[state_id]:.2f}/tonne"
+            )
+        # CLAUDE END - Calculate spot prices for each state
+
         for agent in self.schedule.agents:
             agent.evaluate()
  
