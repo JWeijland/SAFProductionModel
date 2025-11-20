@@ -1,0 +1,16 @@
+# Python virtual environments
+SAF_Market_Model_Env0/
+VSCode copy_0/
+
+# Bytecode cache
+__pycache__/
+
+# OS-specific files
+.DS_Store
+
+# Logs and temporary files
+logs/
+*.log
+
+# Output folders
+output/
