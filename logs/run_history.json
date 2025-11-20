@@ -1151,6 +1151,62 @@
         "capex_decrease": false
       },
       "results_summary": {}
+    },
+    {
+      "run_id": "20251120_104925",
+      "run_name": "Surge_Oversupply_20251120_104925",
+      "timestamp": "2025-11-20T10:49:25.507210",
+      "display_date": "2025-11-20 10:49:25",
+      "scenario": "Surge",
+      "feedstock_scenario": "Oversupply",
+      "steps": 100,
+      "seed": 638147085,
+      "config": {
+        "min_NPV_threshold": 0,
+        "opex": 285.71,
+        "transport_cost": 600,
+        "profit_margin": 250,
+        "initial_num_investors": 1,
+        "initial_num_SAF_sites": 1,
+        "max_capacity": 100000,
+        "saf_plant_construction_time": 4,
+        "Investment_horizon_length": 25,
+        "DR_sensitivity_parameter": 0.2,
+        "ideal_roace": 0.075,
+        "DR_target": 0.075,
+        "capex_total_cost": 500000000,
+        "atf_plus_price": 2000,
+        "capex_annual_decrease": 0.01,
+        "blending_mandate": 0.01,
+        "start_year": 2024,
+        "inflation_rate": 0,
+        "tech_improvement_rate": 0,
+        "market_escalation_rate": 0,
+        "contract_escalation_rate": 0,
+        "tier_capacity_size": 120000,
+        "tier_1_cost": 400,
+        "tier_cost_increment": 200,
+        "aggregator_profit_margin": 50,
+        "feedstock_multiplier_min": 0.8,
+        "feedstock_multiplier_max": 1.2,
+        "DR_sample_min": 0.06,
+        "DR_sample_max": 0.12,
+        "Optimism_factor_sample_min": 1,
+        "Optimism_factor_sample_max": 1,
+        "DR_min": 0.04,
+        "DR_max": 0.2,
+        "streamday_min": 0.95,
+        "streamday_max": 0.98,
+        "ROACE_stability_min": 0.06,
+        "ROACE_stability_max": 0.09,
+        "contract_percentage_min": 0.7,
+        "contract_percentage_max": 0.7
+      },
+      "boolean_config": {
+        "operational_initially": true,
+        "capex_decrease": false
+      },
+      "results_summary": {}
     }
   ]
 }

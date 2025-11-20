@@ -1,0 +1,19 @@
+state,max_supply (Tonnes/year),feedstock_price(USD/Tonne),feedstock_type
+PUNJAB,4787000.0,360,Rice straw
+HARYANA,4000000.0,360,Rice straw
+UTTAR_PRADESH,16500000.0,390,"Sugarcane bagasse, rice straw"
+BIHAR,3333333.333,390,"Rice straw, sugarcane bagasse"
+ANDHRA_PRADESH,3000000.0,405,Rice straw
+TAMIL_NADU,1333333.333,435,Sugarcane bagasse
+MAHARASHTRA,10333333.333,435,Sugarcane bagasse
+KARNATAKA,5666666.667,405,Sugarcane bagasse
+WEST_BENGAL,5497000.0,405,Rice straw
+CHHATTISGARH,2666666.667,360,Rice straw
+ODISHA,3204666.667,360,Rice straw
+MADHYA_PRADESH,3333333.333,390,Rice straw
+TELANGANA,5698000.0,390,Rice straw
+ASSAM,2000000.0,480,Rice straw
+JHARKHAND,1666666.667,435,Rice straw
+RAJASTHAN,2333333.333,435,Rice straw
+KERALA,1000000.0,480,Rice straw
+GUJARAT,1583333.333,405,Sugarcane bagasse
