@@ -2,11 +2,15 @@ from src.Agents.Feedstock_Aggregator import FeedstockAggregator
 
 from mesa import Agent
 
-from typing import List, Any
+from typing import List, Any, Optional, TYPE_CHECKING
 
 import logging
 
 import random
+
+# Contract type import (avoids circular dependency)
+if TYPE_CHECKING:
+    from src.Agents.FeedstockContract import FeedstockContract
 
  
 
@@ -162,7 +166,10 @@ class SAFProductionSite(Agent):
 
         self.streamday_percentage = self.sample_streamday_percentage()
 
- 
+        # Link to feedstock contract (enables priority allocation)
+        self.active_contract: Optional['FeedstockContract'] = None
+
+
 
     def sample_streamday_percentage(self) -> float:
 
@@ -188,59 +195,149 @@ class SAFProductionSite(Agent):
 
  
 
-    def calculate_srmc(self) -> float:
-
+    def calculate_srmc(self, current_year: int = None) -> float:
         """
-
         Compute short-run marginal cost (SRMC): Cost to produce 1 tonne of SAF.
 
- 
+        Formula: SRMC = feedstock_price + opex + transport_cost + profit_margin
 
-        Formula:
+        If current_year provided, all cost components escalate at market_escalation_rate.
+        Otherwise uses base prices (backwards compatibility).
 
-          SRMC = feedstock_price + opex + transport_cost + profit_margin
-
- 
+        Parameters:
+            current_year: Optional calendar year for market price escalation
 
         Returns:
-
             SRMC value (float).
-
         """
+        if current_year is not None:
+            start_year = int(self.model.config["start_year"])
+            years_elapsed = current_year - start_year
+            market_escalation_rate = float(self.model.config.get("market_escalation_rate", 0.02))
+            escalation_factor = (1 + market_escalation_rate) ** years_elapsed
 
-        feedstock_price = self.aggregator.feedstock_price
+            feedstock_price = self.aggregator.get_current_market_price(current_year)
+            opex_escalated = self.opex * escalation_factor
+            transport_escalated = self.transport_cost * escalation_factor
+            margin_escalated = self.profit_margin * escalation_factor
 
- 
+            srmc_total = feedstock_price + opex_escalated + transport_escalated + margin_escalated
+        else:
+            feedstock_price = self.aggregator.feedstock_price
+            srmc_total = feedstock_price + self.opex + self.transport_cost + self.profit_margin
 
-        return feedstock_price + self.opex + self.transport_cost + self.profit_margin
+        return srmc_total
 
- 
+
+
+    def get_contracted_capacity(self, current_year: int = None) -> float:
+        """
+        Calculate contracted capacity (contract_percentage × max_capacity).
+        Returns 0.0 if no active contract.
+        """
+        if self.active_contract is None:
+            return 0.0
+
+        if current_year is not None and not self.active_contract.is_active(current_year):
+            return 0.0
+
+        return self.max_capacity * self.active_contract.contract_percentage
+
+    def get_spot_capacity(self, current_year: int = None) -> float:
+        """Calculate spot (non-contracted) capacity."""
+        return self.max_capacity - self.get_contracted_capacity(current_year)
+
+    def get_spot_utilization_factor(self) -> float:
+        """
+        Decide how much of spot capacity to utilize based on price signals.
+
+        SPOT CAPACITY OPTIMIZATION:
+        Plant compares spot price vs contract price and decides whether to:
+        - Use full spot capacity (100%) if spot is attractive
+        - Reduce spot usage if spot price is too high
+
+        Logic:
+        - If spot_price < contract_price * 0.90 (10% discount): USE ALL spot (100%)
+        - If spot_price > contract_price * 1.10 (10% premium): USE MIN spot (0% - fully optional)
+        - Otherwise: LINEAR interpolation between 0% and 100%
+
+        Returns:
+            Utilization factor between 0.0 and 1.0
+        """
+        # Check if we have an active contract to compare against
+        if not self.active_contract:
+            # No contract - always use all spot capacity
+            return 1.0
+
+        # Get current year
+        from src.utils import year_for_tick
+        current_year = year_for_tick(
+            int(self.model.config["start_year"]),
+            int(self.model.schedule.time)
+        )
+
+        # Get current contract price (escalated)
+        contract_price = self.active_contract.get_price_for_year(current_year)
+
+        # Get spot price for this state
+        spot_price = self.model.state_spot_prices.get(
+            self.state_id,
+            self.aggregator.feedstock_price  # Fallback
+        )
+
+        # Decision thresholds
+        attractive_threshold = contract_price * 0.90  # 10% discount
+        expensive_threshold = contract_price * 1.10   # 10% premium
+
+        # Case 1: Spot is attractive (≥10% cheaper) → Use all spot capacity
+        if spot_price <= attractive_threshold:
+            return 1.0
+
+        # Case 2: Spot is expensive (≥10% more expensive) → Use minimum spot
+        elif spot_price >= expensive_threshold:
+            return 0.0  # Fully optional - can go to 0%
+
+        # Case 3: In between → Linear interpolation
+        else:
+            # spot_price is between attractive and expensive
+            # Map linearly: attractive (1.0) → expensive (0.0)
+            price_range = expensive_threshold - attractive_threshold
+            price_diff = spot_price - attractive_threshold
+            utilization = 1.0 - 1.0 * (price_diff / price_range)
+            return utilization
 
     def calculate_production_output(self) -> float:
-
         """
+        Compute annual production with contract priority.
 
-        Compute potential annual production given current aggregator load factor.
-
- 
+        Production splits into two components:
+        1. Contracted capacity: uses contracted_load_factor (priority allocation)
+        2. Spot capacity: uses spot_load_factor (residual allocation)
+           - NEW: Spot capacity usage is modulated by get_spot_utilization_factor()
+           - Plant reduces spot purchases when spot price is unfavorable
 
         Returns:
-
-            Annual production volume (float).
-
+            Annual production volume (contracted + spot)
         """
+        contracted_capacity = self.get_contracted_capacity()
+        spot_capacity = self.get_spot_capacity()
 
-        return (
-
-            self.max_capacity
-
-            * self.design_load_factor
-
-            * self.aggregator.annual_load_factor
-
-            * self.streamday_percentage
-
+        contracted_production = (
+            contracted_capacity * self.design_load_factor *
+            self.aggregator.contracted_load_factor * self.streamday_percentage
         )
+
+        # CLAUDE NEW - Spot Capacity Optimization
+        # Get utilization factor based on price signals
+        spot_utilization = self.get_spot_utilization_factor()
+
+        spot_production = (
+            spot_capacity * spot_utilization *  # ← NEW: Price-responsive utilization
+            self.design_load_factor *
+            self.aggregator.spot_load_factor * self.streamday_percentage
+        )
+
+        return contracted_production + spot_production
 
  
 

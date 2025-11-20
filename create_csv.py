@@ -288,7 +288,7 @@ if __name__ == "__main__":
             "key": "Investment_horizon_length",
             "value": 25,
             "unit": "years",
-            "remarks": "Make into a variable/parameter",
+            "remarks": "Set to 25 years for comparison with copy_0 baseline",
         },
         {
             "key": "DR_sensitivity_parameter",
@@ -351,7 +351,73 @@ if __name__ == "__main__":
             "value": 0.09,
             "unit": "",
             "remarks": "Maximum ROACE threshold for tending towards average value",
-        }
+        },
+        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: New config parameters
+        {
+            "key": "inflation_rate",
+            "value": 0.0,
+            "unit": "",
+            "remarks": "General inflation rate (CPI) - SET TO 0 FOR BASELINE COMPARISON",
+        },
+        {
+            "key": "tech_improvement_rate",
+            "value": 0.0,
+            "unit": "",
+            "remarks": "Annual cost reduction from technological learning - SET TO 0 FOR BASELINE COMPARISON",
+        },
+        {
+            "key": "market_escalation_rate",
+            "value": 0.0,
+            "unit": "",
+            "remarks": "Net market escalation (inflation minus tech improvement) - SET TO 0 FOR BASELINE COMPARISON",
+        },
+        {
+            "key": "contract_escalation_rate",
+            "value": 0.0,
+            "unit": "",
+            "remarks": "Contract escalation (rigid CPI indexation without tech benefit) - SET TO 0 FOR BASELINE COMPARISON",
+        },
+        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: New config parameters
+        # CLAUDE START - Contract percentage configuration
+        {
+            "key": "contract_percentage_min",
+            "value": 0.80,
+            "unit": "",
+            "remarks": "Minimum percentage of effective capacity covered by long-term contract (default 80%)",
+        },
+        {
+            "key": "contract_percentage_max",
+            "value": 0.90,
+            "unit": "",
+            "remarks": "Maximum percentage of effective capacity covered by long-term contract (default 90%)",
+        },
+        # CLAUDE END - Contract percentage configuration
+        # CLAUDE START - Phase 3 TIERED PRICING: Tier configuration parameters
+        {
+            "key": "tier_capacity_size",
+            "value": 120000,
+            "unit": "ton/year",
+            "remarks": "Capacity size for each pricing tier - determines tier width",
+        },
+        {
+            "key": "tier_1_cost",
+            "value": 400,
+            "unit": "USD/ton",
+            "remarks": "Base cost for first tier (cheapest feedstock)",
+        },
+        {
+            "key": "tier_cost_increment",
+            "value": 200,
+            "unit": "USD/ton",
+            "remarks": "Cost increase per tier (tier 2 = tier_1_cost + increment, tier 3 = tier_1_cost + 2*increment, etc.)",
+        },
+        {
+            "key": "aggregator_profit_margin",
+            "value": 50,
+            "unit": "USD/ton",
+            "remarks": "Fixed profit margin added to weighted tier cost by aggregator",
+        },
+        # CLAUDE END - Phase 3 TIERED PRICING: Tier configuration parameters
     ]
     save_constants(constants, "input/config.csv")
  

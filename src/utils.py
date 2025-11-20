@@ -12,27 +12,33 @@ def calculate_consumer_price(
 ) -> float:
     """
     Calculate the SAF consumer (clearing) price using a merit-order approach.
- 
+
     Logic:
       - Sort operational supply sites by SRMC (ascending).
       - Accumulate supply until (>=) demand; the SRMC of the marginal unit sets the price.
       - If no supply is available (all filtered out) => price capped at atf_plus_price.
       - If demand <= 0 => return lowest SRMC (or cap).
- 
+
     The function returns the marginal price (first value) and details about the marginal block (second value).
- 
+
     Details include:
       - supply_at_marginal: Total supply from sites at the marginal price.
       - needed_from_marginal: Amount needed from the marginal price block to meet demand.
       - percentage_sold: Fraction of the marginal block that was actually sold.
- 
+
     We note that all site with a higher SRMC than the ATF+ price are excluded from the merit order, as well as sites with zero production output.
- 
+
+    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: ATF+ price escalation
+    # NOTE: atf_plus_price parameter now receives the ESCALATED ATF+ price for the current year.
+    # The base ATF+ price (€2000 in 2024) escalates at inflation rate (3%/year) to remain
+    # economically consistent with fossil fuel price evolution.
+    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: ATF+ price escalation
+
     Parameters:
         production_sites: List of dicts each containing keys:
                              'srmc' (float) and 'production_output' (float).
         demand_this_tick: Demand for SAF (float). Values <= 0 treated as zero-demand edge case.
-        atf_plus_price: Policy / cap price (float) acting as upper bound.
+        atf_plus_price: Policy / cap price (float) acting as upper bound (already escalated for current year).
     Returns:
         (clearing_price (float), marginal_block_percentage (float in [0,1])).
     """
@@ -134,52 +140,124 @@ def forecast_consumer_prices(
     current_year = int(model_start_year + current_tick)
     end_year = int(current_year + int(investment_horizon))
  
+    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Get inflation rate for ATF+ escalation
+    inflation_rate = float(model.config.get("inflation_rate", 0.03))
+    base_atf_plus_price = float(atf_plus_price)  # This is the base price passed in
+    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION
+
     for year in range(current_year + 1, end_year + 1):
- 
+
         tick_for_year = year - model_start_year
- 
+
+        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Pass model for escalated SRMC
         operational_sites = find_operational_sites(
-            production_sites, tick_for_year, prediction=True
+            production_sites, tick_for_year, prediction=True, model=model
         )
- 
+        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX
+
         demand = (
             get_saf_demand_forecast(year, model.config, demand_forecast)
         )
- 
+
+        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Escalate ATF+ price for forecast year
+        years_elapsed_forecast = year - int(model_start_year)
+        escalated_atf_plus_price_forecast = base_atf_plus_price * ((1 + inflation_rate) ** years_elapsed_forecast)
+        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION
+
         price, details = calculate_consumer_price(
             operational_sites,
             demand,
-            atf_plus_price,
+            escalated_atf_plus_price_forecast,  # CLAUDE: Use escalated price
         )
         forecast.append([price, [details]])
  
     return forecast
  
-def find_operational_sites(production_sites, year, prediction=False):
+def find_operational_sites(production_sites, year, prediction=False, model=None):
     """
     Filter and map operational sites for a given year.
- 
+
     Logic:
-      - Includes sites with operational_year <= year..
+      - Includes sites with operational_year <= year (already operational)
+      - ALSO includes sites under construction that will become operational within forecast window
       - Production output:
           * prediction=True  -> max_capacity * design_load_factor
           * prediction=False -> max_capacity * design_load_factor * current annual load factor
- 
+
+    # CLAUDE START - Phase 2 CONTRACT OBLIGATION FIX: Merit Order Design Decision
+    # Merit order now uses MARKET-ESCALATED SRMC with technological improvement.
+    #
+    # Key distinction:
+    # 1. Merit order SRMC = market feedstock price (escalates at 2%/year with tech improvement)
+    # 2. Contract SRMC = contract feedstock price (escalates at 3%/year, CPI-indexed)
+    # 3. Old contracts become MORE expensive than market over time (1%/year delta)
+    #
+    # Result: Plants with old, escalated contracts:
+    #   - Appear competitive in merit order (based on current market SRMC ~2% escalation)
+    #   - Set market price based on current market costs
+    #   - BUT must produce at LOSS if contract SRMC (3% escalation) > market price
+    #   - Contract obligation forces production even when unprofitable
+    #
+    # This creates realistic "stranded asset" dynamics where plants locked into
+    # expensive long-term contracts lose competitiveness as technology improves.
+    # See Investor.calculate_ebit() for contract obligation enforcement.
+    # CLAUDE END - Phase 2 CONTRACT OBLIGATION FIX: Merit Order Design Decision
+
+    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Updated parameters
     Parameters:
         production_sites: List of SAFProductionSite objects.
         year: Year (tick) to test operational status against.
         prediction: If True, ignores realised annual load factor variability.
+        model: Optional model reference for getting current year (for SRMC escalation)
+    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Updated parameters
     Returns:
         List of dicts: { site_id, srmc, production_output }.
     """
     operational_sites = []
+
+    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Calculate current calendar year correctly
+    current_year = None
+    if model is not None:
+        # year parameter is a TICK (0, 1, 2, ...), convert to calendar year
+        start_year = int(model.config["start_year"])
+        current_year = start_year + int(year)
+    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX: Calculate current calendar year correctly
+
+    # CLAUDE START - Phase 2 FORECAST FIX: Include plants under construction
+    # CRITICAL FIX for overinvestment: Investors must see plants being built!
+    #
+    # Problem before: Forecasts only counted operational sites, creating 4-year blindspot
+    # during construction. This caused cascading overinvestment:
+    #   Year N: Scarcity forecast → 40 investors build
+    #   Year N+1-3: Forecasts ignore construction → MORE investors build (!!!)
+    #   Year N+4: Plants operational → Massive oversupply → Too late
+    #
+    # Solution: Count sites that WILL BE operational within the forecast year.
+    # This creates self-correcting feedback:
+    #   Year N: Scarcity forecast → 40 investors build
+    #   Year N+1: Forecasts SEE construction → No scarcity → Investment stops ✓
+    #
+    # Implementation: Include sites where operational_year <= forecast_year
+    # (regardless of whether they're operational NOW at current tick)
+    # CLAUDE END - Phase 2 FORECAST FIX: Include plants under construction
+
     for site in production_sites:
+        # CLAUDE START - Phase 2 FORECAST FIX: Changed condition to include under-construction sites
+        # OLD: if site.operational_year <= year
+        # NEW: Same condition, but year is the FORECAST year, not current year
+        # This naturally includes plants under construction that become operational by forecast year
         if site.operational_year <= year:
+        # CLAUDE END - Phase 2 FORECAST FIX: Changed condition to include under-construction sites
             if not any(s["site_id"] == site.site_id for s in operational_sites):
                 operational_sites.append(
                     {
                         "site_id": site.site_id,
-                        "srmc": site.calculate_srmc(),
+                        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION
+                        # Uses MARKET-ESCALATED SRMC (2%/year with tech improvement)
+                        # This reflects current competitive position in the market
+                        # Different from contract SRMC which escalates at 3%/year
+                        "srmc": site.calculate_srmc(current_year=current_year),
+                        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION
                         "production_output": (
                             site.max_capacity * site.design_load_factor
                             if prediction

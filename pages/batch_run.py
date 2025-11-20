@@ -14,7 +14,7 @@ register_page(
 
     __name__,
 
-    path="/saf-market-model/batch",
+    path="/batch",
 
     name="Multiple Replications",
 

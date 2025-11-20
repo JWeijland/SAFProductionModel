@@ -35,7 +35,7 @@ register_page(
 
     __name__,
 
-    path="/saf-market-model/model",
+    path="/model",
 
     name="Model",
 

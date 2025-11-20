@@ -286,12 +286,14 @@ class SAFMarketModel(Model):
                 state_id: aggregator.max_supply
                 for state_id, aggregator in self.aggregators.items()
             }
- 
+
+            # Only operational plants pledge feedstock
             for site in self.production_sites:
-                pledged_feedstock = site.max_capacity * site.design_load_factor
-                self.states_available_feedstock[site.state_id] = max(
-                    0, self.states_available_feedstock[site.state_id] - pledged_feedstock
-                )
+                if site.operational_year <= 0:  # During init, check against 0
+                    pledged_feedstock = site.max_capacity * site.design_load_factor
+                    self.states_available_feedstock[site.state_id] = max(
+                        0, self.states_available_feedstock[site.state_id] - pledged_feedstock
+                    )
  
             for aggregator in self.aggregators.values():
                 aggregator.available_feedstock = self.states_available_feedstock[
@@ -326,8 +328,7 @@ class SAFMarketModel(Model):
                 capex_schedule=capex_schedule if operational == False else [],
             )
             if operational:
-                site.operational_year = self.schedule.time
-            site.produce()
+                site.operational_year = 0  # Initial plants operational at tick 0
             self.production_sites.append(site)
             self.schedule.add(site)
  
@@ -362,13 +363,12 @@ class SAFMarketModel(Model):
             for asset, _ in investor.owned_assets:
                 logging.info(f"  Asset {asset['site_id']}")
 
-        # CLAUDE START - Contract tracking attributes for Phase 1 implementation
-        self.all_contracts = []  # Global list of all contracts
-        self.state_spot_prices = {}  # Dict mapping state_id -> spot price
-        self.new_contracts_this_year = []  # Contracts signed this tick
-        # CLAUDE END - Contract tracking attributes for Phase 1 implementation
+        # Contract tracking attributes
+        self.all_contracts = []
+        self.state_spot_prices = {}
+        self.new_contracts_this_year = []
 
-        # CLAUDE START - Create contracts for initial sites
+        # Create contracts for initial sites
         logging.info("Creating initial feedstock contracts...")
         for site in self.production_sites:
             # Find the investor that owns this site
@@ -393,10 +393,50 @@ class SAFMarketModel(Model):
             self.new_contracts_this_year.append(contract)
             aggregator.register_contract(contract)
 
+            # Link contract to site (enables priority allocation)
+            site.active_contract = contract
+
             logging.info(
                 f"Initial contract {contract.contract_id}: "
                 f"{contract.contract_percentage:.1%} @ ${contract.initial_contract_price:.2f}/tonne"
             )
+
+        # Calculate initial demand (needed for load factors)
+        from src.utils import year_for_tick
+        current_year = year_for_tick(int(config["start_year"]), 0)
+
+        # Ensure scheduler time is set for initial calculations
+        if not hasattr(self.schedule, 'time'):
+            self.schedule.time = 0
+
+        for aggregator in self.aggregators.values():
+            aggregator.total_contracted_demand = 0.0
+            aggregator.total_spot_demand = 0.0
+
+        for site in self.production_sites:
+            if site.operational_year <= 0:  # Check against 0 explicitly for init
+                aggregator = site.aggregator
+                contracted_cap = site.get_contracted_capacity(current_year)
+                spot_cap = site.get_spot_capacity(current_year)
+
+                contracted_demand = contracted_cap * site.design_load_factor * site.streamday_percentage
+                spot_demand = spot_cap * site.design_load_factor * site.streamday_percentage
+
+                aggregator.total_contracted_demand += contracted_demand
+                aggregator.total_spot_demand += spot_demand
+
+        # Update supply (calculates load factors)
+        for aggregator in self.aggregators.values():
+            aggregator.update_supply()
+
+        # Initial production calculation (after contracts and load factors are set)
+        logging.info("Calculating initial production for operational sites...")
+        for site in self.production_sites:
+            if site.operational_year <= 0:  # Check against 0 explicitly for init
+                site.produce()
+                logging.info(
+                    f"{site.site_id}: Initial production = {site.year_production_output:,.0f} tonnes/year"
+                )
 
         # Calculate initial spot prices
         for state_id, aggregator in self.aggregators.items():
@@ -441,38 +481,141 @@ class SAFMarketModel(Model):
         # CLAUDE END - Clear contracts from previous year
 
  
+        # CLAUDE FIX - Sample current supply FIRST before calculating available feedstock
+        # This ensures available_feedstock and current_supply have the same baseline
+        for aggregator in self.aggregators.values():
+            current, _ = aggregator.sample_current_supply()
+            aggregator.current_supply = current
+
+        # Now calculate available feedstock FROM current_supply (not max_supply!)
         self.states_available_feedstock = {
-            state_id: aggregator.max_supply
+            state_id: aggregator.current_supply  # ← Use CURRENT supply, not max!
             for state_id, aggregator in self.aggregators.items()
         }
- 
+
+        # Only operational plants pledge feedstock
         for site in self.production_sites:
-            pledged_feedstock = site.max_capacity * site.design_load_factor
-            self.states_available_feedstock[site.state_id] = max(
-                0, self.states_available_feedstock[site.state_id] - pledged_feedstock
-            )
- 
+            if site.operational_year <= self.schedule.time:
+                pledged_feedstock = site.max_capacity * site.design_load_factor
+                self.states_available_feedstock[site.state_id] = max(
+                    0, self.states_available_feedstock[site.state_id] - pledged_feedstock
+                )
+
         for aggregator in self.aggregators.values():
             aggregator.available_feedstock = self.states_available_feedstock[
                 aggregator.state_id
             ]
- 
+
+        # Calculate contracted vs spot demand (must happen before update_supply)
+        for aggregator in self.aggregators.values():
+            aggregator.total_contracted_demand = 0.0
+            aggregator.total_spot_demand = 0.0
+
+        from src.utils import year_for_tick
+        current_year = year_for_tick(int(self.config["start_year"]), int(self.schedule.time))
+
+        for site in self.production_sites:
+            if site.operational_year <= self.schedule.time:
+                aggregator = site.aggregator
+                contracted_cap = site.get_contracted_capacity(current_year)
+                spot_cap = site.get_spot_capacity(current_year)
+
+                contracted_demand = contracted_cap * site.design_load_factor * site.streamday_percentage
+                spot_demand = spot_cap * site.design_load_factor * site.streamday_percentage
+
+                aggregator.total_contracted_demand += contracted_demand
+                aggregator.total_spot_demand += spot_demand
+
         for agent in self.schedule.agents:
             agent.update_supply()
- 
+
+        # CLAUDE START - Contract Renewal: Automatically renew expired contracts BEFORE production
+        # IMPORTANT: This must happen BEFORE produce() to avoid production gap in renewal year
+        # Check all operational sites and renew contracts that have expired
+        current_year = year_for_tick(self.config["start_year"], self.schedule.time)
+
+        for site in self.production_sites:
+            # Only check sites that are operational
+            if site.operational_year <= self.schedule.time:
+                # Check if site has a contract that has expired
+                if site.active_contract and not site.active_contract.is_active(current_year):
+                    # Find the investor that owns this site
+                    investor = None
+                    for inv in self.investors:
+                        if inv.investor_id == site.investor_id:
+                            investor = inv
+                            break
+
+                    if investor:
+                        # Get the aggregator for this site's state
+                        aggregator = self.aggregators[site.state_id]
+
+                        # Create a new contract to replace the expired one
+                        logger.info(
+                            f"Contract expired for {site.site_id}. "
+                            f"Creating renewal contract in year {current_year}"
+                        )
+
+                        # Use renewal method to maintain same tier pricing
+                        old_contract = site.active_contract
+                        renewal_price = aggregator.renew_contract_at_same_tier(
+                            existing_contract=old_contract,
+                            current_year=current_year
+                        )
+
+                        # Create new contract with same terms (NO tier escalation)
+                        new_contract = FeedstockContract(
+                            contract_id=f"contract_{site.site_id}_renewal_{current_year}",
+                            investor_id=site.investor_id,
+                            aggregator_id=site.state_id,
+                            plant_id=site.site_id,
+                            initial_contract_price=renewal_price,  # Same tier price
+                            start_year=current_year,
+                            end_year=current_year + old_contract.duration,
+                            duration=old_contract.duration,
+                            annual_capacity=old_contract.annual_capacity,
+                            contract_percentage=old_contract.contract_percentage,
+                            escalation_rate=0.0,  # No escalation in tier system
+                            status="active"
+                        )
+
+                        # Add to investor's contracts
+                        investor.contracts.append(new_contract)
+
+                        # Assign the new contract to the site
+                        site.active_contract = new_contract
+
+                        # Register contract with aggregator
+                        aggregator.register_contract(new_contract)
+
+                        # Track for spot price calculation
+                        self.new_contracts_this_year.append(new_contract)
+
+                        logger.info(
+                            f"✓ Renewed contract for {site.site_id}: "
+                            f"{new_contract.contract_percentage:.1%} coverage at "
+                            f"${new_contract.initial_contract_price:.2f}/tonne"
+                        )
+                    else:
+                        logger.warning(
+                            f"Could not find investor {site.investor_id} "
+                            f"to renew contract for {site.site_id}"
+                        )
+        # CLAUDE END - Contract Renewal: Automatically renew expired contracts BEFORE production
+
         for agent in self.schedule.agents:
             agent.produce()
- 
+
         self.update_consumer_price()
         updated_forecast = self.generate_price_forecast()
         self.consumer_price_forecast = updated_forecast
- 
+
         logger.debug(f"Price forecast: {updated_forecast}")
- 
+
         for investor in self.investors:
             investor.consumer_price_forecast = updated_forecast
             investor.current_tick = self.schedule.time
- 
+
         # CLAUDE START - Calculate spot prices for each state
         current_year = year_for_tick(self.config["start_year"], self.schedule.time)
         for state_id, aggregator in self.aggregators.items():
@@ -490,9 +633,11 @@ class SAFMarketModel(Model):
 
         for agent in self.schedule.agents:
             agent.evaluate()
- 
+
         for agent in self.schedule.agents:
             agent.invest()
+            # Note: Feedstock is updated WITHIN Investor.investment_mechanism() at line 689
+            # This creates sequential "first-come, first-served" dynamics automatically
  
         logging.info("Introducing a new investor...")
         self.new_investor()
@@ -528,14 +673,26 @@ class SAFMarketModel(Model):
             current_year, self.config, self.atf_demand_forecast
         )
         self.demand = demand_this_tick
+        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Pass model for year-based SRMC calculation
         operational_sites_data = find_operational_sites(
-            self.production_sites, current_tick
+            self.production_sites, current_tick, model=self
         )
- 
+        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Pass model for year-based SRMC calculation
+
+        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Escalate ATF+ price with inflation
+        # ATF+ price (fossil fuel alternative) must escalate with inflation to remain economically consistent.
+        # Without escalation, SAF becomes uncompetitive after ~18 years when escalated SRMC exceeds
+        # the fixed €2000 cap, causing all production to halt.
+        base_atf_plus_price = float(self.config["atf_plus_price"])
+        inflation_rate = float(self.config.get("inflation_rate", 0.03))
+        years_elapsed = current_year - start_year
+        escalated_atf_plus_price = base_atf_plus_price * ((1 + inflation_rate) ** years_elapsed)
+        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Escalate ATF+ price with inflation
+
         self.market_price, self.marginal_details = calculate_consumer_price(
             operational_sites_data,
             demand_this_tick=demand_this_tick,
-            atf_plus_price=self.config["atf_plus_price"],
+            atf_plus_price=escalated_atf_plus_price,  # CLAUDE: Use escalated price
         )
         for investor in self.investors:
             investor.consumer_price_forecast = [

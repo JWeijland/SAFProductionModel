@@ -188,7 +188,10 @@ app.layout = dbc.Container(
 
         dcc.Store(id="store-batch-market-metric-log", storage_type="memory"),
 
- 
+        # Store for current run information (name, date, etc.)
+        dcc.Store(id="store-current-run-info", storage_type="session"),
+
+
 
         dcc.Store(id="store-graph-saf-price-over-time", storage_type="session"),
 

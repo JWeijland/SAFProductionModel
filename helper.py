@@ -180,13 +180,15 @@ def render_config_tab():
 
         render_slider_card(
 
-            "Feedstock",
+            "Feedstock & Contracts",
 
             [
 
                 create_slider("transport_cost", SLIDER_CONFIG_KEYS_SINGLE["transport_cost"], title="Transport Cost (USD)"),
 
                 create_range_slider("feedstock_multiplier", SLIDER_CONFIG_KEYS_RANGE["feedstock_multiplier"], title="Feedstock Multiplier"),
+
+                create_range_slider("contract_percentage", SLIDER_CONFIG_KEYS_RANGE["contract_percentage"], title="Contract Coverage (% of effective capacity)"),
 
             ],
 
@@ -283,6 +285,46 @@ def render_config_tab():
             ],
 
         ),
+
+        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Add price escalation sliders
+        render_slider_card(
+
+            "Price Escalation",
+
+            [
+
+                create_slider("inflation_rate", SLIDER_CONFIG_KEYS_SINGLE["inflation_rate"], title="Inflation Rate (CPI)"),
+
+                create_slider("tech_improvement_rate", SLIDER_CONFIG_KEYS_SINGLE["tech_improvement_rate"], title="Tech Improvement Rate"),
+
+                create_slider("market_escalation_rate", SLIDER_CONFIG_KEYS_SINGLE["market_escalation_rate"], title="Market Escalation Rate"),
+
+                create_slider("contract_escalation_rate", SLIDER_CONFIG_KEYS_SINGLE["contract_escalation_rate"], title="Contract Escalation Rate"),
+
+            ],
+
+        ),
+        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Add price escalation sliders
+
+        # CLAUDE START - Phase 3 TIERED PRICING: Add tier configuration sliders
+        render_slider_card(
+
+            "Tiered Pricing",
+
+            [
+
+                create_slider("tier_capacity_size", SLIDER_CONFIG_KEYS_SINGLE["tier_capacity_size"], title="Tier Capacity Size (ton/year)"),
+
+                create_slider("tier_1_cost", SLIDER_CONFIG_KEYS_SINGLE["tier_1_cost"], title="Tier 1 Base Cost (USD/ton)"),
+
+                create_slider("tier_cost_increment", SLIDER_CONFIG_KEYS_SINGLE["tier_cost_increment"], title="Tier Cost Increment (USD/ton)"),
+
+                create_slider("aggregator_profit_margin", SLIDER_CONFIG_KEYS_SINGLE["aggregator_profit_margin"], title="Aggregator Profit Margin (USD/ton)"),
+
+            ],
+
+        ),
+        # CLAUDE END - Phase 3 TIERED PRICING: Add tier configuration sliders
 
     ]
 

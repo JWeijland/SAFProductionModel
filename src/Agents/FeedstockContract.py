@@ -21,9 +21,10 @@ class FeedstockContract:
 
     Contract Structure:
     - Duration: 20 years (configurable)
-    - Coverage: 80-90% of plant capacity (investor chooses)
-    - Pricing: Initial SRMC with 3% annual escalation
-    - Remaining 10-20%: Purchased at annual spot price
+    - Coverage: 50-100% of effective plant capacity (investor chooses, default 80-90%)
+    - Effective capacity includes: design load factor × contracted load factor × stream days
+    - Pricing: Initial market price with 3% annual escalation
+    - Remaining percentage: Purchased at annual spot price
 
     Attributes:
         contract_id: Unique contract identifier
@@ -35,8 +36,9 @@ class FeedstockContract:
         start_year: Year contract begins
         end_year: Year contract expires (start_year + duration)
         duration: Contract length in years (default: 20)
-        annual_capacity: Plant's design capacity (tonnes/year)
-        contract_percentage: Fraction covered by contract (0.80-0.90)
+        annual_capacity: Plant's effective maximum capacity (tonnes/year)
+            Calculated as: max_capacity × design_load_factor × contracted_load_factor × stream_days
+        contract_percentage: Fraction covered by contract (0.50-1.00, typically 0.80-0.90)
         status: Contract state ("active" or "expired")
     """
 
@@ -96,9 +98,9 @@ class FeedstockContract:
                 f"annual_capacity must be positive, got {self.annual_capacity}"
             )
 
-        if not 0.80 <= self.contract_percentage <= 0.90:
+        if not 0.50 <= self.contract_percentage <= 1.00:
             raise ValueError(
-                f"contract_percentage must be between 0.80 and 0.90, got {self.contract_percentage}"
+                f"contract_percentage must be between 0.50 and 1.00, got {self.contract_percentage}"
             )
 
         # Validate status
@@ -221,7 +223,7 @@ def create_contract_from_site(
         site: SAFProductionSite instance
         investor_id: ID of investor creating contract
         current_year: Year contract is signed
-        contract_percentage: Coverage fraction (0.80-0.90)
+        contract_percentage: Coverage fraction (0.50-1.00, typically 0.80-0.90)
         duration: Contract length in years (default: 20)
         escalation_rate: Annual price escalation (default: 0.03)
 

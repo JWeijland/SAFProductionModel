@@ -1,12 +1,14 @@
 from __future__ import annotations
 
- 
+
 
 # Standard library
 
 import json
 
 import ast
+
+from datetime import datetime
 
  
 
@@ -71,6 +73,8 @@ from input_stores import (
 from runner import run_market_model_csv, run_market_model_csv_batch
 
 from helper import _parse_list
+
+from run_manager import get_run_manager
 
  
 
@@ -176,6 +180,8 @@ def register_callbacks(app: dash.Dash) -> None:
 
         Output("store-batch-market-metric-log", "data"),
 
+        Output("store-current-run-info", "data"),
+
         Input("btn-run", "n_clicks"),
 
         Input("btn-batch-run", "n_clicks"),
@@ -246,11 +252,47 @@ def register_callbacks(app: dash.Dash) -> None:
 
             )
 
- 
+
+
+            # Save run to persistent storage
+            scenario_name = scenario or "Surge"
+            feedstock_name = feedstock_scenario or "Oversupply"
+            run_name = f"{scenario_name}_{feedstock_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            run_id = None
+
+            try:
+                run_manager = get_run_manager()
+
+                # Create a results summary for quick reference
+                results_summary = {}
+                try:
+                    if len(market_metric_log) > 0:
+                        if "SAF_price" in market_metric_log.columns:
+                            results_summary["final_saf_price"] = float(market_metric_log["SAF_price"].iloc[-1])
+                        if "supply" in market_metric_log.columns:
+                            results_summary["total_supply"] = float(market_metric_log["supply"].iloc[-1])
+                        if "demand" in market_metric_log.columns:
+                            results_summary["total_demand"] = float(market_metric_log["demand"].iloc[-1])
+                except Exception:
+                    pass  # If summary fails, just save empty dict
+
+                run_id = run_manager.save_run(
+                    run_name=run_name,
+                    scenario=scenario_name,
+                    feedstock_scenario=feedstock_name,
+                    steps=int(steps or 100),
+                    seed=seed or 0,
+                    config=sliders_store or {},
+                    boolean_config=boolean_config_store or {},
+                    results_summary=results_summary,
+                )
+            except Exception as e:
+                # If saving fails, continue anyway - don't crash the simulation
+                print(f"Warning: Could not save run to history: {e}")
 
             summary = dbc.Alert(
 
-                f"Simulation complete for {scenario or 'Surge'} with {steps or 100} steps.",
+                f"Simulation complete for {scenario_name} with {steps or 100} steps. Run saved as: {run_name}",
 
                 color="success",
 
@@ -260,7 +302,14 @@ def register_callbacks(app: dash.Dash) -> None:
 
             )
 
- 
+            # Prepare run info for display in charts
+            run_info = {
+                "run_id": run_id or datetime.now().strftime('%Y%m%d_%H%M%S'),
+                "run_name": run_name,
+                "display_date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "scenario": scenario_name,
+                "feedstock_scenario": feedstock_name,
+            }
 
             return (
 
@@ -287,6 +336,8 @@ def register_callbacks(app: dash.Dash) -> None:
                 [],
 
                 [],  # Batch outputs
+
+                run_info,  # Current run info
 
             )
 
@@ -369,6 +420,8 @@ def register_callbacks(app: dash.Dash) -> None:
                 batch_saf_site_df.to_dict("records"),
 
                 batch_market_metrics_df.to_dict("records"),
+
+                None,  # No single run info for batch runs
 
             )
 
@@ -490,23 +543,28 @@ def register_callbacks(app: dash.Dash) -> None:
 
         Input("store-model", "data"),
 
+        Input("store-current-run-info", "data"),
+
     )
 
-    def plot_saf_price_over_time(model_data):
+    def plot_saf_price_over_time(model_data, run_info):
 
         if not model_data:
 
             return None
 
- 
+
 
         df = pd.DataFrame(model_data)
 
- 
+
 
         fig = px.line(df, x="Year", y="Market_Price")
 
- 
+        # Add run info to title if available
+        if run_info:
+            title = f"SAF Price Over Time<br><sub>Run: {run_info.get('run_name', 'Unknown')} | {run_info.get('display_date', 'Unknown date')}</sub>"
+            fig.update_layout(title=title)
 
         return fig
 
@@ -518,19 +576,21 @@ def register_callbacks(app: dash.Dash) -> None:
 
         Input("store-market-metric-log", "data"),
 
+        Input("store-current-run-info", "data"),
+
     )
 
-    def plot_supply_demand(data):
+    def plot_supply_demand(data, run_info):
 
         if not data:
 
             return None
 
- 
+
 
         df = pd.DataFrame(data)
 
- 
+
 
         x_col = "Year"
 
@@ -558,7 +618,10 @@ def register_callbacks(app: dash.Dash) -> None:
 
         fig.update_layout(template="plotly_white")
 
- 
+        # Add run info to title if available
+        if run_info:
+            title = f"Supply vs Demand<br><sub>Run: {run_info.get('run_name', 'Unknown')} | {run_info.get('display_date', 'Unknown date')}</sub>"
+            fig.update_layout(title=title)
 
         return fig
 
@@ -704,19 +767,21 @@ def register_callbacks(app: dash.Dash) -> None:
 
         Input("store-saf-production-site", "data"),
 
+        Input("store-current-run-info", "data"),
+
     )
 
-    def fig_supply_by_plant(data):
+    def fig_supply_by_plant(data, run_info):
 
         if not data:
 
             return None
 
- 
+
 
         df = pd.DataFrame(data)
 
- 
+
 
         x_col = "Year"
 
@@ -754,7 +819,16 @@ def register_callbacks(app: dash.Dash) -> None:
 
         fig.update_layout(template="plotly_white")
 
- 
+
+        # Add run info to title
+        if run_info:
+            run_name = run_info.get("run_name", "Unknown")
+            display_date = run_info.get("display_date", "")
+            fig.update_layout(
+                title=f"SAF Supply by Plant<br><sub>Run: {run_name} | {display_date}</sub>"
+            )
+
+
 
         return fig
 
@@ -808,11 +882,13 @@ def register_callbacks(app: dash.Dash) -> None:
 
         Input("store-feedstock-aggregator", "data"),
 
+        Input("store-current-run-info", "data"),
+
         prevent_initial_call=True,
 
     )
 
-    def update_feedstock_graph(selected_states, data):
+    def update_feedstock_graph(selected_states, data, run_info):
 
         if not data or not selected_states:
 
@@ -962,7 +1038,16 @@ def register_callbacks(app: dash.Dash) -> None:
 
         fig.update_yaxes(tickformat=",.0f", title_text="Tonnes")
 
- 
+
+        # Add run info to title
+        if run_info:
+            run_name = run_info.get("run_name", "Unknown")
+            display_date = run_info.get("display_date", "")
+            fig.update_layout(
+                title=f"Feedstock Availability per State<br><sub>Run: {run_name} | {display_date}</sub>"
+            )
+
+
 
         return fig
 
@@ -978,15 +1063,17 @@ def register_callbacks(app: dash.Dash) -> None:
 
         Input("store-investor", "data"),
 
+        Input("store-current-run-info", "data"),
+
     )
 
-    def fig_owned_sites_per_investor(data):
+    def fig_owned_sites_per_investor(data, run_info):
 
         if not data:
 
             return None
 
- 
+
 
         df = pd.DataFrame(data)
 
@@ -1000,7 +1087,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
         site_distribution.columns = ["Number of Sites Owned", "Number of Investors"]
 
- 
+
 
         fig = px.bar(
 
@@ -1020,6 +1107,16 @@ def register_callbacks(app: dash.Dash) -> None:
 
         )
 
+
+        # Add run info to title
+        if run_info:
+            run_name = run_info.get("run_name", "Unknown")
+            display_date = run_info.get("display_date", "")
+            fig.update_layout(
+                title=f"Owned Sites per Investor<br><sub>Run: {run_name} | {display_date}</sub>"
+            )
+
+
         return fig
 
  
@@ -1032,11 +1129,13 @@ def register_callbacks(app: dash.Dash) -> None:
 
         Input("store-investor", "data"),
 
+        Input("store-current-run-info", "data"),
+
         prevent_initial_call=True,
 
     )
 
-    def fig_investor_kpis(investor_id, data):
+    def fig_investor_kpis(investor_id, data, run_info):
 
         if not data:
 
@@ -1396,11 +1495,20 @@ def register_callbacks(app: dash.Dash) -> None:
 
         )
 
- 
+
+        # Add run info to title
+        if run_info:
+            run_name = run_info.get("run_name", "Unknown")
+            display_date = run_info.get("display_date", "")
+            fig.update_layout(
+                title=f"Investor KPIs<br><sub>Run: {run_name} | {display_date}</sub>"
+            )
+
+
 
         return fig
 
-   
+
 
     @app.callback(
 
@@ -1438,11 +1546,13 @@ def register_callbacks(app: dash.Dash) -> None:
 
         Input("dropdown-selected-plants", "value"),
 
+        Input("store-current-run-info", "data"),
+
         prevent_initial_call=True,
 
     )
 
-    def fig_plant_ebit_line(site_df: pd.DataFrame, selected_plants) -> go.Figure:
+    def fig_plant_ebit_line(site_df: pd.DataFrame, selected_plants, run_info) -> go.Figure:
 
         if not site_df or not selected_plants:
 
@@ -1494,9 +1604,19 @@ def register_callbacks(app: dash.Dash) -> None:
 
         fig.update_layout(template="plotly_white", legend_title_text="Plant")
 
+
+        # Add run info to title
+        if run_info:
+            run_name = run_info.get("run_name", "Unknown")
+            display_date = run_info.get("display_date", "")
+            fig.update_layout(
+                title=f"Plant EBITs Over Time<br><sub>Run: {run_name} | {display_date}</sub>"
+            )
+
+
         return fig
 
- 
+
 
     @app.callback(
 
@@ -1760,9 +1880,11 @@ def register_callbacks(app: dash.Dash) -> None:
 
         Input("store-saf-production-site", "data"),
 
+        Input("store-current-run-info", "data"),
+
     )
 
-    def plot_production_by_investor_vs_demand(investor_data):
+    def plot_production_by_investor_vs_demand(investor_data, run_info):
 
         # Return an empty figure if there is no data yet
 
@@ -1928,7 +2050,16 @@ def register_callbacks(app: dash.Dash) -> None:
 
         )
 
- 
+
+        # Add run info to title
+        if run_info:
+            run_name = run_info.get("run_name", "Unknown")
+            display_date = run_info.get("display_date", "")
+            fig.update_layout(
+                title=f"Production by Investor vs Demand<br><sub>Run: {run_name} | {display_date}</sub>"
+            )
+
+
 
         return fig
 
