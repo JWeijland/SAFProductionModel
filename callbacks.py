@@ -4845,7 +4845,446 @@ def register_callbacks(app: dash.Dash) -> None:
             print(f"Error in plot_contract_renewals: {e}")
             return go.Figure()
 
+    # ========================================================================
+    # KPI COMPARISON TABLE: copy_0 vs copy_3
+    # ========================================================================
 
+    def calculate_copy3_kpis(model_data, site_data, investor_data, aggregator_data, run_info):
+        """
+        Calculate all KPIs for copy_3 model from simulation data.
+
+        Returns dict with structure:
+        {
+            "Market Structure & Pricing": {...},
+            "Investment & Entry Dynamics": {...},
+            ...
+        }
+        """
+        kpis = {}
+
+        try:
+            df_model = pd.DataFrame(model_data) if model_data else pd.DataFrame()
+            df_sites = pd.DataFrame(site_data) if site_data else pd.DataFrame()
+            df_investors = pd.DataFrame(investor_data) if investor_data else pd.DataFrame()
+            df_agg = pd.DataFrame(aggregator_data) if aggregator_data else pd.DataFrame()
+
+            # Clean data
+            for df in [df_model, df_sites, df_investors, df_agg]:
+                if "Year" in df.columns:
+                    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+                    df.dropna(subset=["Year"], inplace=True)
+
+            # ==================== CATEGORY 1: Market Structure & Pricing ====================
+            kpis["Market Structure & Pricing"] = {}
+
+            # Average SAF Market Price
+            if "Market_Price" in df_model.columns:
+                df_model["Market_Price"] = pd.to_numeric(df_model["Market_Price"], errors="coerce")
+                avg_price = df_model["Market_Price"].mean()
+                kpis["Market Structure & Pricing"]["Average SAF Market Price"] = {
+                    "value": avg_price,
+                    "unit": "USD/ton"
+                }
+
+            # Price Volatility
+            if "Market_Price" in df_model.columns:
+                price_std = df_model["Market_Price"].std()
+                kpis["Market Structure & Pricing"]["Price Volatility (Std Dev)"] = {
+                    "value": price_std,
+                    "unit": "USD/ton"
+                }
+
+            # Feedstock Price Range
+            if "State_Spot_Price" in df_agg.columns:
+                df_agg["State_Spot_Price"] = pd.to_numeric(df_agg["State_Spot_Price"], errors="coerce")
+                min_price = df_agg["State_Spot_Price"].min()
+                max_price = df_agg["State_Spot_Price"].max()
+                kpis["Market Structure & Pricing"]["Feedstock Price Range"] = {
+                    "value": f"${min_price:.0f} - ${max_price:.0f}",
+                    "unit": "USD/ton"
+                }
+
+            # Contract vs Spot Price Gap
+            if "Contract_Price" in df_sites.columns and "State_Spot_Price" in df_sites.columns:
+                df_sites["Contract_Price"] = pd.to_numeric(df_sites["Contract_Price"], errors="coerce")
+                df_sites["State_Spot_Price"] = pd.to_numeric(df_sites["State_Spot_Price"], errors="coerce")
+
+                contract_avg = df_sites[df_sites["Contract_Price"].notna()]["Contract_Price"].mean()
+                spot_avg = df_sites["State_Spot_Price"].mean()
+                gap = abs(contract_avg - spot_avg)
+
+                kpis["Market Structure & Pricing"]["Contract vs Spot Price Gap"] = {
+                    "value": gap,
+                    "unit": "USD/ton"
+                }
+
+            # Market Concentration (simplified - count investors)
+            if "Investor_ID" in df_sites.columns:
+                unique_investors = df_sites["Investor_ID"].nunique()
+                kpis["Market Structure & Pricing"]["Number of Active Investors"] = {
+                    "value": unique_investors,
+                    "unit": "count"
+                }
+
+            # ==================== CATEGORY 2: Investment & Entry Dynamics ====================
+            kpis["Investment & Entry Dynamics"] = {}
+
+            # Total Plants Built
+            if "Unique_ID" in df_sites.columns:
+                total_plants = df_sites["Unique_ID"].nunique()
+                kpis["Investment & Entry Dynamics"]["Total Plants Built"] = {
+                    "value": total_plants,
+                    "unit": "count"
+                }
+
+            # Average Entry Year
+            if "Year" in df_sites.columns and "Unique_ID" in df_sites.columns:
+                first_appearance = df_sites.groupby("Unique_ID")["Year"].min()
+                avg_entry = first_appearance.mean()
+                kpis["Investment & Entry Dynamics"]["Average Entry Year"] = {
+                    "value": avg_entry,
+                    "unit": "year"
+                }
+
+            # Investment Wave Pattern (early/mid/late split)
+            if "Year" in df_sites.columns and "Unique_ID" in df_sites.columns:
+                first_appearance = df_sites.groupby("Unique_ID")["Year"].min()
+                min_year = first_appearance.min()
+                max_year = first_appearance.max()
+
+                if max_year > min_year:
+                    third = (max_year - min_year) / 3
+                    early = ((first_appearance <= min_year + third).sum())
+                    mid = ((first_appearance > min_year + third) & (first_appearance <= min_year + 2*third)).sum()
+                    late = ((first_appearance > min_year + 2*third).sum())
+
+                    kpis["Investment & Entry Dynamics"]["Investment Wave Pattern"] = {
+                        "value": f"Early: {early}, Mid: {mid}, Late: {late}",
+                        "unit": "count"
+                    }
+
+            # Time to Market Saturation
+            if "Year" in df_sites.columns and "Unique_ID" in df_sites.columns:
+                first_appearance = df_sites.groupby("Unique_ID")["Year"].min()
+                saturation_time = first_appearance.max() - first_appearance.min()
+                kpis["Investment & Entry Dynamics"]["Time to Market Saturation"] = {
+                    "value": saturation_time,
+                    "unit": "years"
+                }
+
+            # Early Mover Advantage (Tier 1 vs Tier 3 SRMC diff)
+            if "Initial_Contract_Price" in df_sites.columns and "Unique_ID" in df_sites.columns:
+                df_sites["Initial_Contract_Price"] = pd.to_numeric(df_sites["Initial_Contract_Price"], errors="coerce")
+
+                # Get first contract price per plant
+                first_prices = df_sites[df_sites["Initial_Contract_Price"].notna()].groupby("Unique_ID")["Initial_Contract_Price"].first()
+
+                if len(first_prices) >= 3:
+                    tier1_price = first_prices.nsmallest(1).iloc[0]  # Lowest price
+                    tier3_price = first_prices.nsmallest(3).iloc[-1]  # 3rd lowest
+                    advantage = tier3_price - tier1_price
+
+                    kpis["Investment & Entry Dynamics"]["Early Mover Advantage (Tier Price Diff)"] = {
+                        "value": advantage,
+                        "unit": "USD/ton"
+                    }
+
+            # ==================== CATEGORY 3: Financial Performance ====================
+            kpis["Financial Performance"] = {}
+
+            # Average ROACE
+            if "ROACE" in df_investors.columns:
+                df_investors["ROACE"] = pd.to_numeric(df_investors["ROACE"], errors="coerce")
+                avg_roace = df_investors["ROACE"].mean() * 100  # Convert to percentage
+                kpis["Financial Performance"]["Average ROACE"] = {
+                    "value": avg_roace,
+                    "unit": "%"
+                }
+
+            # NPV Distribution (P10/P50/P90)
+            if "NPV" in df_sites.columns:
+                df_sites["NPV"] = pd.to_numeric(df_sites["NPV"], errors="coerce")
+                npv_data = df_sites[df_sites["NPV"].notna()]["NPV"]
+
+                if len(npv_data) > 0:
+                    p10 = npv_data.quantile(0.10) / 1e6  # Convert to millions
+                    p50 = npv_data.quantile(0.50) / 1e6
+                    p90 = npv_data.quantile(0.90) / 1e6
+
+                    kpis["Financial Performance"]["NPV Distribution (P10/P50/P90)"] = {
+                        "value": f"${p10:.1f}M / ${p50:.1f}M / ${p90:.1f}M",
+                        "unit": "USD"
+                    }
+
+            # EBIT Volatility
+            if "EBIT" in df_sites.columns:
+                df_sites["EBIT"] = pd.to_numeric(df_sites["EBIT"], errors="coerce")
+                ebit_std = df_sites["EBIT"].std() / 1e6  # Convert to millions
+                kpis["Financial Performance"]["EBIT Volatility (Std Dev)"] = {
+                    "value": ebit_std,
+                    "unit": "M USD"
+                }
+
+            # Total Cumulative Profit
+            if "EBIT" in df_sites.columns:
+                df_sites["EBIT"] = pd.to_numeric(df_sites["EBIT"], errors="coerce")
+                total_profit = df_sites["EBIT"].sum() / 1e6  # Convert to millions
+                kpis["Financial Performance"]["Total Cumulative EBIT"] = {
+                    "value": total_profit,
+                    "unit": "M USD"
+                }
+
+            # ==================== CATEGORY 4: Operational Metrics ====================
+            kpis["Operational Metrics"] = {}
+
+            # Average Load Factor
+            if "Annual_Load_Factor" in df_agg.columns:
+                df_agg["Annual_Load_Factor"] = pd.to_numeric(df_agg["Annual_Load_Factor"], errors="coerce")
+                avg_lf = df_agg["Annual_Load_Factor"].mean() * 100
+                kpis["Operational Metrics"]["Average Load Factor"] = {
+                    "value": avg_lf,
+                    "unit": "%"
+                }
+
+            # Supply Reliability (% years demand met)
+            if "Total_Supply" in df_model.columns and "Demand" in df_model.columns:
+                df_model["Total_Supply"] = pd.to_numeric(df_model["Total_Supply"], errors="coerce")
+                df_model["Demand"] = pd.to_numeric(df_model["Demand"], errors="coerce")
+
+                years_met = (df_model["Total_Supply"] >= df_model["Demand"]).sum()
+                total_years = len(df_model)
+                reliability = (years_met / total_years * 100) if total_years > 0 else 0
+
+                kpis["Operational Metrics"]["Supply Reliability (% Years Demand Met)"] = {
+                    "value": reliability,
+                    "unit": "%"
+                }
+
+            # Total SAF Production
+            if "Production_Output" in df_sites.columns:
+                df_sites["Production_Output"] = pd.to_numeric(df_sites["Production_Output"], errors="coerce")
+                total_production = df_sites["Production_Output"].sum() / 1e6  # Convert to millions
+                kpis["Operational Metrics"]["Total SAF Production (Cumulative)"] = {
+                    "value": total_production,
+                    "unit": "M tons"
+                }
+
+            # ==================== CATEGORY 5: Contract & Risk Metrics ====================
+            kpis["Contract & Risk Metrics"] = {}
+
+            # Average Contract Coverage
+            if "Initial_Contract_Price" in df_sites.columns:
+                # Plants with contracts
+                has_contract = df_sites["Initial_Contract_Price"].notna()
+                contract_coverage = has_contract.sum() / len(df_sites) * 100 if len(df_sites) > 0 else 0
+
+                kpis["Contract & Risk Metrics"]["Average Contract Coverage"] = {
+                    "value": contract_coverage,
+                    "unit": "%"
+                }
+
+            # Total Take-or-Pay Penalties
+            if "Take_Or_Pay_Penalty" in df_sites.columns:
+                df_sites["Take_Or_Pay_Penalty"] = pd.to_numeric(df_sites["Take_Or_Pay_Penalty"], errors="coerce")
+                total_penalties = df_sites["Take_Or_Pay_Penalty"].sum() / 1e6  # Convert to millions
+                kpis["Contract & Risk Metrics"]["Total Take-or-Pay Penalties"] = {
+                    "value": total_penalties,
+                    "unit": "M USD"
+                }
+
+            # Curtailed Volume
+            if "Curtailed_Volume" in df_sites.columns and "Production_Output" in df_sites.columns:
+                df_sites["Curtailed_Volume"] = pd.to_numeric(df_sites["Curtailed_Volume"], errors="coerce")
+                df_sites["Production_Output"] = pd.to_numeric(df_sites["Production_Output"], errors="coerce")
+
+                total_curtailed = df_sites["Curtailed_Volume"].sum()
+                total_capacity = df_sites["Production_Output"].sum() + total_curtailed
+                curtailed_pct = (total_curtailed / total_capacity * 100) if total_capacity > 0 else 0
+
+                kpis["Contract & Risk Metrics"]["Curtailed Volume (% of Capacity)"] = {
+                    "value": curtailed_pct,
+                    "unit": "%"
+                }
+
+            # ==================== CATEGORY 6: Market Efficiency ====================
+            kpis["Market Efficiency"] = {}
+
+            # Supply-Demand Balance
+            if "Total_Supply" in df_model.columns and "Demand" in df_model.columns:
+                df_model["Total_Supply"] = pd.to_numeric(df_model["Total_Supply"], errors="coerce")
+                df_model["Demand"] = pd.to_numeric(df_model["Demand"], errors="coerce")
+
+                df_model["Balance"] = (df_model["Total_Supply"] - df_model["Demand"]) / df_model["Demand"] * 100
+                avg_balance = df_model["Balance"].mean()
+
+                kpis["Market Efficiency"]["Supply-Demand Balance (Avg Surplus/Deficit)"] = {
+                    "value": avg_balance,
+                    "unit": "%"
+                }
+
+            # Stranded Assets
+            if "EBIT" in df_sites.columns and "Unique_ID" in df_sites.columns:
+                df_sites["EBIT"] = pd.to_numeric(df_sites["EBIT"], errors="coerce")
+
+                # Calculate average EBIT per plant
+                avg_ebit_per_plant = df_sites.groupby("Unique_ID")["EBIT"].mean()
+                stranded = (avg_ebit_per_plant < 0).sum()
+
+                kpis["Market Efficiency"]["Stranded Assets (Plants with Negative Avg EBIT)"] = {
+                    "value": stranded,
+                    "unit": "count"
+                }
+
+        except Exception as e:
+            print(f"Error calculating KPIs: {e}")
+            import traceback
+            traceback.print_exc()
+
+        return kpis
+
+    @app.callback(
+        Output("kpi-comparison-table", "children"),
+        Input("store-model-vars", "data"),
+        Input("store-saf-production-site", "data"),
+        Input("store-investor", "data"),
+        Input("store-feedstock-aggregator", "data"),
+        Input("store-current-run-info", "data"),
+    )
+    def update_kpi_table(model_data, site_data, investor_data, aggregator_data, run_info):
+        """
+        Generate KPI Comparison Table between copy_0 (baseline) and copy_3 (advanced model).
+        copy_0 values are hardcoded placeholders to be filled in later.
+        copy_3 values are calculated from simulation data.
+        """
+        if not site_data:
+            return html.Div("Run a simulation to see KPI comparison", style={"textAlign": "center", "padding": "20px", "color": "gray"})
+
+        # Calculate copy_3 KPIs from data
+        copy3_kpis = calculate_copy3_kpis(model_data, site_data, investor_data, aggregator_data, run_info)
+
+        # Hardcoded copy_0 baseline values (placeholders - to be filled)
+        copy0_kpis = {
+            "Market Structure & Pricing": {
+                "Average SAF Market Price": {"value": 1450, "unit": "USD/ton"},
+                "Price Volatility (Std Dev)": {"value": 180, "unit": "USD/ton"},
+                "Feedstock Price Range": {"value": "$450 - $450", "unit": "USD/ton"},
+                "Contract vs Spot Price Gap": {"value": 0, "unit": "USD/ton"},
+                "Number of Active Investors": {"value": 0, "unit": "count"},
+            },
+            "Investment & Entry Dynamics": {
+                "Total Plants Built": {"value": 0, "unit": "count"},
+                "Average Entry Year": {"value": 0, "unit": "year"},
+                "Investment Wave Pattern": {"value": "N/A", "unit": "count"},
+                "Time to Market Saturation": {"value": 0, "unit": "years"},
+                "Early Mover Advantage (Tier Price Diff)": {"value": 0, "unit": "USD/ton"},
+            },
+            "Financial Performance": {
+                "Average ROACE": {"value": 0, "unit": "%"},
+                "NPV Distribution (P10/P50/P90)": {"value": "N/A", "unit": "USD"},
+                "EBIT Volatility (Std Dev)": {"value": 0, "unit": "M USD"},
+                "Total Cumulative EBIT": {"value": 0, "unit": "M USD"},
+            },
+            "Operational Metrics": {
+                "Average Load Factor": {"value": 0, "unit": "%"},
+                "Supply Reliability (% Years Demand Met)": {"value": 0, "unit": "%"},
+                "Total SAF Production (Cumulative)": {"value": 0, "unit": "M tons"},
+            },
+            "Contract & Risk Metrics": {
+                "Average Contract Coverage": {"value": 0, "unit": "%"},
+                "Total Take-or-Pay Penalties": {"value": 0, "unit": "M USD"},
+                "Curtailed Volume (% of Capacity)": {"value": 0, "unit": "%"},
+            },
+            "Market Efficiency": {
+                "Supply-Demand Balance (Avg Surplus/Deficit)": {"value": 0, "unit": "%"},
+                "Stranded Assets (Plants with Negative Avg EBIT)": {"value": 0, "unit": "count"},
+            },
+        }
+
+        # Build table sections
+        table_sections = []
+
+        for category in copy0_kpis.keys():
+            # Category header
+            table_sections.append(
+                html.Tr([
+                    html.Td(category, colSpan=4, style={
+                        "backgroundColor": "#0c72b6",
+                        "color": "white",
+                        "fontWeight": "bold",
+                        "padding": "12px",
+                        "fontSize": "14px",
+                        "textAlign": "left",
+                    })
+                ])
+            )
+
+            # KPI rows
+            copy0_cat = copy0_kpis.get(category, {})
+            copy3_cat = copy3_kpis.get(category, {})
+
+            for kpi_name in copy0_cat.keys():
+                copy0_val = copy0_cat.get(kpi_name, {})
+                copy3_val = copy3_cat.get(kpi_name, {})
+
+                # Format values
+                copy0_display = f"{copy0_val.get('value', 'N/A')}"
+                if isinstance(copy0_val.get('value'), float):
+                    copy0_display = f"{copy0_val.get('value', 0):.1f}"
+
+                copy3_display = f"{copy3_val.get('value', 'N/A')}"
+                if isinstance(copy3_val.get('value'), float):
+                    copy3_display = f"{copy3_val.get('value', 0):.1f}"
+
+                # Calculate delta
+                delta_display = "—"
+                delta_color = "#666"
+
+                if (isinstance(copy0_val.get('value'), (int, float)) and
+                    isinstance(copy3_val.get('value'), (int, float)) and
+                    copy0_val.get('value') != 0):
+
+                    delta_pct = ((copy3_val.get('value') - copy0_val.get('value')) / abs(copy0_val.get('value'))) * 100
+                    delta_display = f"{delta_pct:+.1f}%"
+
+                    # Color coding
+                    if abs(delta_pct) < 1:
+                        delta_color = "#666"  # Gray for negligible
+                    elif delta_pct > 0:
+                        delta_color = "#2ca02c"  # Green for positive
+                    else:
+                        delta_color = "#d62728"  # Red for negative
+
+                # Add row
+                table_sections.append(
+                    html.Tr([
+                        html.Td(kpi_name, style={"padding": "10px", "fontWeight": "500", "width": "40%"}),
+                        html.Td(f"{copy0_display} {copy0_val.get('unit', '')}", style={"padding": "10px", "textAlign": "center"}),
+                        html.Td(f"{copy3_display} {copy3_val.get('unit', '')}", style={"padding": "10px", "textAlign": "center"}),
+                        html.Td(delta_display, style={"padding": "10px", "textAlign": "center", "fontWeight": "bold", "color": delta_color}),
+                    ], style={"borderBottom": "1px solid #e0e0e0"})
+                )
+
+        # Build complete table
+        table = dbc.Table([
+            html.Thead(
+                html.Tr([
+                    html.Th("KPI", style={"width": "40%"}),
+                    html.Th("copy_0 (Baseline)", style={"textAlign": "center"}),
+                    html.Th("copy_3 (Advanced)", style={"textAlign": "center"}),
+                    html.Th("Δ Change", style={"textAlign": "center"}),
+                ], style={"backgroundColor": "#f8f9fa"})
+            ),
+            html.Tbody(table_sections)
+        ], bordered=True, hover=True, responsive=True, striped=False, style={"fontSize": "13px"})
+
+        return html.Div([
+            html.H4("KPI Comparison: Baseline vs Advanced Model", style={"marginBottom": "20px", "color": "#0c72b6"}),
+            html.P([
+                "copy_0 = Baseline model (uniform feedstock pricing, no contracts). ",
+                html.Span("Values are placeholders - fill with actual copy_0 results.", style={"fontStyle": "italic", "color": "#666"})
+            ], style={"marginBottom": "20px", "fontSize": "14px"}),
+            table
+        ])
 
 
 

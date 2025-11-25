@@ -763,6 +763,25 @@ layout = html.Div(
 
                                 ),
 
+
+                                # Section 5: KPI Comparison Table
+
+                                html.Hr(className="my-4"),
+
+                                html.H4("KPI Comparison: copy_0 vs copy_3", className="mb-3", style={"color": "#0c72b6"}),
+
+                                html.P(
+                                    "Comprehensive side-by-side comparison of key performance indicators between the baseline model (copy_0) and the advanced model (copy_3).",
+                                    style={"marginBottom": "20px", "fontSize": "14px", "color": "#666"}
+                                ),
+
+                                dbc.Row([
+                                    dbc.Col(
+                                        html.Div(id="kpi-comparison-table"),
+                                        md=12,
+                                    ),
+                                ]),
+
                             ],
 
                         ),
