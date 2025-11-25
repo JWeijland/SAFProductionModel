@@ -4264,87 +4264,101 @@ def register_callbacks(app: dash.Dash) -> None:
 
     @app.callback(
         Output("graph-contract-vs-spot-prices", "figure"),
+        Input("store-saf-production-site", "data"),
         Input("store-feedstock-aggregator", "data"),
         Input("store-current-run-info", "data"),
     )
-    def plot_contract_vs_spot_prices(aggregator_data, run_info):
+    def plot_contract_vs_spot_prices(site_data, aggregator_data, run_info):
         """
         Graph 3: Contract vs Spot Feedstock Prices over time
-        Shows differential escalation: contracts (rigid CPI) vs spot (net of tech improvement)
+        Shows two lines:
+        - Contract Price: Locked-in tier price with CPI escalation (from site contracts)
+        - Spot Price: Current market price reflecting tier capacity allocation
         """
-        if not aggregator_data or not run_info:
+        if not site_data or not aggregator_data or not run_info:
             return go.Figure()
 
         try:
-            df = pd.DataFrame(aggregator_data)
+            df_sites = pd.DataFrame(site_data)
+            df_agg = pd.DataFrame(aggregator_data)
 
             # Get config to check escalation rates
             config = run_info.get("config", {})
             contract_escalation = float(config.get("contract_escalation_rate", 0.0))
             market_escalation = float(config.get("market_escalation_rate", 0.0))
 
-            # Convert columns
-            df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
-            df = df.dropna(subset=["Year"])
-            df["State_ID"] = df["State_ID"].fillna("Unknown") if "State_ID" in df.columns else "Unknown"
+            # Process site data for contract prices
+            df_sites["Year"] = pd.to_numeric(df_sites["Year"], errors="coerce")
+            df_sites = df_sites.dropna(subset=["Year"])
 
-            # Use available price column (State_Spot_Price or Feedstock_Price)
-            price_col = None
-            if "State_Spot_Price" in df.columns:
-                price_col = "State_Spot_Price"
-            elif "Feedstock_Price" in df.columns:
-                price_col = "Feedstock_Price"
-
-            if price_col is None:
-                return go.Figure()
-
-            df[price_col] = pd.to_numeric(df[price_col], errors="coerce").fillna(0)
-            price_avg = df.groupby("Year")[price_col].mean().reset_index()
-            price_avg.columns = ["Year", "Price"]
+            # Process aggregator data for spot prices
+            df_agg["Year"] = pd.to_numeric(df_agg["Year"], errors="coerce")
+            df_agg = df_agg.dropna(subset=["Year"])
 
             fig = go.Figure()
 
-            # Add price line
-            if not price_avg.empty:
-                fig.add_trace(go.Scatter(
-                    x=price_avg["Year"],
-                    y=price_avg["Price"],
-                    mode="lines+markers",
-                    name=f"Feedstock Price (escalation: {market_escalation:.1%})",
-                    line=dict(color="#2ca02c", width=3),
-                    marker=dict(size=6),
-                ))
+            # Add Contract Price line (from sites with contracts)
+            if "Contract_Price" in df_sites.columns:
+                df_sites["Contract_Price"] = pd.to_numeric(df_sites["Contract_Price"], errors="coerce")
+                contract_avg = df_sites[df_sites["Contract_Price"].notna()].groupby("Year")["Contract_Price"].mean().reset_index()
+
+                if not contract_avg.empty:
+                    fig.add_trace(go.Scatter(
+                        x=contract_avg["Year"],
+                        y=contract_avg["Contract_Price"],
+                        mode="lines+markers",
+                        name=f"Contract Price (locked tier + {contract_escalation:.1%} CPI)",
+                        line=dict(color="#1f77b4", width=3, dash="solid"),
+                        marker=dict(size=6),
+                    ))
+
+            # Add Spot Price line (from aggregator)
+            spot_col = "State_Spot_Price" if "State_Spot_Price" in df_agg.columns else "Feedstock_Price"
+            if spot_col in df_agg.columns:
+                df_agg[spot_col] = pd.to_numeric(df_agg[spot_col], errors="coerce")
+                spot_avg = df_agg.groupby("Year")[spot_col].mean().reset_index()
+
+                if not spot_avg.empty:
+                    fig.add_trace(go.Scatter(
+                        x=spot_avg["Year"],
+                        y=spot_avg[spot_col],
+                        mode="lines+markers",
+                        name=f"Spot Market Price (current tier + {market_escalation:.1%} escalation)",
+                        line=dict(color="#ff7f0e", width=3, dash="dot"),
+                        marker=dict(size=6, symbol="diamond"),
+                    ))
 
             fig.update_layout(
-                title="Feedstock Prices Over Time",
+                title="Contract vs Spot Feedstock Prices Over Time",
                 xaxis_title="Year",
                 yaxis_title="Price (USD/tonne)",
                 hovermode="x unified",
-                legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.8)"),
+                legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.9)"),
                 template="plotly_white",
             )
 
             return fig
         except Exception as e:
             print(f"Error in plot_contract_vs_spot_prices: {e}")
+            import traceback
+            traceback.print_exc()
             return go.Figure()
 
     @app.callback(
         Output("graph-feedstock-price-by-build-order", "figure"),
         Input("store-saf-production-site", "data"),
-        Input("store-feedstock-aggregator", "data"),
     )
-    def plot_feedstock_price_by_build_order(site_data, aggregator_data):
+    def plot_feedstock_price_by_build_order(site_data):
         """
         Graph 6: Feedstock Price by Plant Build Order
-        Shows tiered pricing impact: early movers lock in lower tier prices
+        Shows tiered pricing impact: each plant's LOCKED tier price at contract signing
+        Early movers get Tier 1 (lowest), later plants pay higher tiers
         """
-        if not site_data or not aggregator_data:
+        if not site_data:
             return go.Figure()
 
         try:
             df_sites = pd.DataFrame(site_data)
-            df_agg = pd.DataFrame(aggregator_data)
 
             # Check required columns exist
             if "Year" not in df_sites.columns or "Unique_ID" not in df_sites.columns:
@@ -4353,58 +4367,73 @@ def register_callbacks(app: dash.Dash) -> None:
             df_sites["Year"] = pd.to_numeric(df_sites["Year"], errors="coerce")
             df_sites = df_sites.dropna(subset=["Year"])
 
-            # Use Unique_ID as Site_ID
-            site_id_col = "Unique_ID"
-            df_sites["Site_ID"] = df_sites[site_id_col].astype(str)
-
-            # Get first year each plant appears
-            first_year = df_sites.groupby("Site_ID")["Year"].min().reset_index()
-            first_year.columns = ["Site_ID", "Entry_Year"]
-
-            # Get price from aggregator (use State_Spot_Price or Feedstock_Price)
-            price_col = "State_Spot_Price" if "State_Spot_Price" in df_agg.columns else "Feedstock_Price"
-            if price_col not in df_agg.columns:
+            # Use Initial_Contract_Price - the tier price locked at signing
+            if "Initial_Contract_Price" not in df_sites.columns:
                 return go.Figure()
 
-            df_agg["Year"] = pd.to_numeric(df_agg["Year"], errors="coerce")
-            df_agg = df_agg.dropna(subset=["Year"])
-            df_agg[price_col] = pd.to_numeric(df_agg[price_col], errors="coerce")
+            df_sites["Initial_Contract_Price"] = pd.to_numeric(df_sites["Initial_Contract_Price"], errors="coerce")
 
-            # Get average price per year
-            price_by_year = df_agg.groupby("Year")[price_col].mean().reset_index()
+            # Get first year each plant appears and its locked tier price
+            # Group by plant and take first non-null contract price
+            plant_data = df_sites[df_sites["Initial_Contract_Price"].notna()].groupby("Unique_ID").agg({
+                "Year": "min",
+                "Initial_Contract_Price": "first",
+                "State_ID": "first"
+            }).reset_index()
 
-            # Merge entry year with price
-            df_plot = first_year.merge(price_by_year, left_on="Entry_Year", right_on="Year", how="left")
-            df_plot = df_plot.dropna(subset=[price_col])
-
-            if df_plot.empty:
+            if plant_data.empty:
                 return go.Figure()
 
-            # Sort by entry year
-            df_plot = df_plot.sort_values("Entry_Year")
+            # Sort by entry year to show build order
+            plant_data = plant_data.sort_values("Year")
+            plant_data["Build_Order"] = range(1, len(plant_data) + 1)
+
+            # Create color gradient based on tier price
+            colors = plant_data["Initial_Contract_Price"]
 
             fig = go.Figure()
 
             fig.add_trace(go.Bar(
-                x=df_plot["Site_ID"],
-                y=df_plot[price_col],
-                marker_color="#2ca02c",
-                hovertemplate="<b>%{x}</b><br>Price: $%{y:.0f}/tonne<br>Entry Year: %{customdata}<extra></extra>",
-                customdata=df_plot["Entry_Year"],
+                x=[f"Plant {i}" for i in plant_data["Build_Order"]],
+                y=plant_data["Initial_Contract_Price"],
+                marker=dict(
+                    color=colors,
+                    colorscale="Reds",
+                    showscale=True,
+                    colorbar=dict(title="Tier Price<br>(USD/ton)")
+                ),
+                hovertemplate=(
+                    "<b>%{x}</b><br>" +
+                    "Locked Tier Price: $%{y:.0f}/tonne<br>" +
+                    "Entry Year: %{customdata[0]}<br>" +
+                    "State: %{customdata[1]}<extra></extra>"
+                ),
+                customdata=plant_data[["Year", "State_ID"]].values,
             ))
 
             fig.update_layout(
-                title="Feedstock Price by Plant Entry Year",
-                xaxis_title="Plant ID (ordered by entry)",
-                yaxis_title="Feedstock Price (USD/tonne)",
+                title="Locked Feedstock Tier Price by Plant Build Order",
+                xaxis_title="Plant Build Order (1st plant, 2nd plant, ...)",
+                yaxis_title="Initial Contract Price (USD/tonne)",
                 hovermode="closest",
                 template="plotly_white",
                 showlegend=False,
+                annotations=[
+                    dict(
+                        text="Early movers lock lower tier prices for 20 years",
+                        xref="paper", yref="paper",
+                        x=0.5, y=1.05,
+                        showarrow=False,
+                        font=dict(size=11, color="gray")
+                    )
+                ]
             )
 
             return fig
         except Exception as e:
             print(f"Error in plot_feedstock_price_by_build_order: {e}")
+            import traceback
+            traceback.print_exc()
             return go.Figure()
 
     @app.callback(

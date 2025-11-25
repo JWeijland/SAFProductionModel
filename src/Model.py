@@ -262,6 +262,20 @@ class SAFMarketModel(Model):
                     if hasattr(a, "get_contracted_capacity")
                     else None
                 ),
+                # Contract price for SAF Production Sites
+                "Contract_Price": lambda a: (
+                    a.active_contract.get_price_for_year(year_for_tick(
+                        int(a.model.config["start_year"]),
+                        int(a.model.schedule.time)
+                    ))
+                    if hasattr(a, "active_contract") and a.active_contract is not None
+                    else None
+                ),
+                "Initial_Contract_Price": lambda a: (
+                    a.active_contract.initial_contract_price
+                    if hasattr(a, "active_contract") and a.active_contract is not None
+                    else None
+                ),
                 # For Investor agents
                 "Num_Contracts": lambda a: (
                     len(getattr(a, "contracts", []))

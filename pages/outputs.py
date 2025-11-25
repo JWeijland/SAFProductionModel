@@ -587,7 +587,7 @@ layout = html.Div(
 
                                                 "Contract vs Spot Feedstock Prices",
 
-                                                subtitle="Differential escalation: contracts (rigid CPI) vs spot (net of tech improvement)",
+                                                subtitle="Contract: locked tier price with CPI escalation. Spot: current market tier price (rises as capacity fills)",
 
                                                 graph_id="graph-contract-vs-spot-prices",
 
@@ -603,7 +603,7 @@ layout = html.Div(
 
                                                 "Feedstock Price by Plant Build Order",
 
-                                                subtitle="Tiered pricing impact: early movers lock lower prices",
+                                                subtitle="Each bar shows the locked tier price per plant: Plant 1 gets Tier 1 ($400), Plant 2 Tier 2 ($600), etc.",
 
                                                 graph_id="graph-feedstock-price-by-build-order",
 
