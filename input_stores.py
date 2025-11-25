@@ -52,8 +52,12 @@ SLIDER_CONFIG_KEYS_SINGLE = {
 
     "tier_cost_increment": {"min": 50, "max": 500, "step": 50, "default": 200},
 
-    "aggregator_profit_margin": {"min": 0, "max": 200, "step": 10, "default": 50}
+    "aggregator_profit_margin": {"min": 0, "max": 200, "step": 10, "default": 50},
     # CLAUDE END - Phase 3 TIERED PRICING: Add tier configuration sliders
+
+    # CLAUDE START - TAKE-OR-PAY: Add penalty rate configuration
+    "take_or_pay_penalty_rate": {"min": 0, "max": 1000, "step": 50, "default": 300}
+    # CLAUDE END - TAKE-OR-PAY: Add penalty rate configuration
 
 }
 
@@ -123,6 +127,10 @@ BOOLEAN_CONFIG_KEYS = {
     "operational_initially": True,
 
     "capex_decrease": False,
+
+    # CLAUDE START - TAKE-OR-PAY: Enable demand allocation feature
+    "enable_demand_allocation": True,
+    # CLAUDE END - TAKE-OR-PAY
 
     # Add more here as needed
 

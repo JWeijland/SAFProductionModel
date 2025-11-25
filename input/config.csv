@@ -13,7 +13,7 @@ DR_sample_min,0.06,,
 DR_sample_max,0.12,,
 Optimism_factor_sample_min,1.0,,
 Optimism_factor_sample_max,1.0,,
-Investment_horizon_length,25.0,years,Make into a variable/parameter
+Investment_horizon_length,25.0,years,Set to 25 years for comparison with copy_0 baseline
 DR_sensitivity_parameter,0.2,,Investor sensitivity to DR change
 ideal_roace,0.075,,Steers DR change
 DR_min,0.04,,
@@ -28,3 +28,13 @@ streamday_max,0.98,,Maximum percentage of streamdays
 DR_target,0.075,,Target discount rate
 ROACE_stability_min,0.06,,Minimum ROACE threshold for tending towards average value
 ROACE_stability_max,0.09,,Maximum ROACE threshold for tending towards average value
+inflation_rate,0.0,,General inflation rate (CPI) - SET TO 0 FOR BASELINE COMPARISON
+tech_improvement_rate,0.0,,Annual cost reduction from technological learning - SET TO 0 FOR BASELINE COMPARISON
+market_escalation_rate,0.0,,Net market escalation (inflation minus tech improvement) - SET TO 0 FOR BASELINE COMPARISON
+contract_escalation_rate,0.0,,Contract escalation (rigid CPI indexation without tech benefit) - SET TO 0 FOR BASELINE COMPARISON
+contract_percentage_min,0.8,,Minimum percentage of effective capacity covered by long-term contract (default 80%)
+contract_percentage_max,0.9,,Maximum percentage of effective capacity covered by long-term contract (default 90%)
+tier_capacity_size,120000.0,ton/year,Capacity size for each pricing tier - determines tier width
+tier_1_cost,400.0,USD/ton,Base cost for first tier (cheapest feedstock)
+tier_cost_increment,200.0,USD/ton,"Cost increase per tier (tier 2 = tier_1_cost + increment, tier 3 = tier_1_cost + 2*increment, etc.)"
+aggregator_profit_margin,50.0,USD/ton,Fixed profit margin added to weighted tier cost by aggregator

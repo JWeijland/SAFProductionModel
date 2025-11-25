@@ -8,6 +8,9 @@ import logging
 
 import random
 
+# CLAUDE - TAKE-OR-PAY: Import year_for_tick for penalty calculation
+from src.utils import year_for_tick
+
 # Contract type import (avoids circular dependency)
 if TYPE_CHECKING:
     from src.Agents.FeedstockContract import FeedstockContract
@@ -339,7 +342,78 @@ class SAFProductionSite(Agent):
 
         return contracted_production + spot_production
 
- 
+    def calculate_take_or_pay_penalty(
+        self,
+        allocated_production: float,
+        current_year: int
+    ) -> float:
+        """
+        Calculate penalty for not taking contracted feedstock due to demand curtailment.
+
+        When market oversupply forces production curtailment, sites with contracts
+        must pay a penalty for feedstock they committed to buy but cannot use.
+
+        Logic:
+        - Calculate expected contracted production (what contract requires)
+        - Calculate actual contracted production (limited by allocation)
+        - Curtailed amount = expected - actual
+        - Penalty = curtailed × penalty_rate
+
+        This implements a take-or-pay mechanism where:
+        - Sites pay for contracted feedstock even if they can't use it
+        - Penalty is less than full production cost (e.g., 300/tonne vs 1500/tonne SRMC)
+        - Prevents sites from overcommitting to contracts
+
+        Parameters:
+            allocated_production: How much this site is allowed to produce (from demand allocation)
+            current_year: Current calendar year
+
+        Returns:
+            penalty_cost: USD (positive = cost, goes to aggregator)
+        """
+        contracted_capacity = self.get_contracted_capacity(current_year)
+
+        if contracted_capacity <= 0:
+            # No contract, no penalty
+            return 0.0
+
+        # Calculate expected contracted production (what we SHOULD produce per contract)
+        contracted_production_expected = (
+            contracted_capacity *
+            self.design_load_factor *
+            self.aggregator.contracted_load_factor *
+            self.streamday_percentage
+        )
+
+        # Calculate actual contracted production (limited by allocation)
+        # We produce contracted volumes first (priority), so:
+        contracted_production_actual = min(allocated_production, contracted_production_expected)
+
+        # Curtailed contracted production (feedstock we must pay for but can't use)
+        curtailed_contracted = max(0, contracted_production_expected - contracted_production_actual)
+
+        # CLAUDE - Store curtailed volume for graph visualization
+        self.curtailed_volume = curtailed_contracted
+
+        if curtailed_contracted <= 0:
+            # No curtailment, no penalty
+            return 0.0
+
+        # Penalty rate from config (default: 300 USD/tonne)
+        penalty_rate = float(self.model.config.get('take_or_pay_penalty_rate', 300.0))
+
+        penalty_cost = curtailed_contracted * penalty_rate
+
+        # Log for transparency
+        logger.info(
+            f"Take-or-pay penalty for {self.site_id}: "
+            f"curtailed {curtailed_contracted:,.0f} tonnes contracted feedstock, "
+            f"penalty ${penalty_cost:,.0f} @ ${penalty_rate:.0f}/tonne"
+        )
+
+        return penalty_cost
+
+
 
     def update_supply(self) -> None:
 
@@ -352,30 +426,69 @@ class SAFProductionSite(Agent):
  
 
     def produce(self) -> None:
-
         """
-
-        Stage- produce:
+        Stage - produce:
 
         - If not yet operational, sets production to zero.
+        - Calculates potential production based on design + realised load factors.
+        - Respects demand allocation (if oversupply) to prevent overproduction.
+        - Calculates take-or-pay penalty for curtailed contracted feedstock.
 
-        - Else computes production based on design + realised load factors.
-
+        CLAUDE - TAKE-OR-PAY: Modified to respect demand allocation and calculate penalties.
         """
 
         self.streamday_percentage = self.sample_streamday_percentage()
 
         current_tick: int = self.model.schedule.time
-
- 
+        current_year = year_for_tick(self.model.config["start_year"], current_tick)
 
         if self.operational_year > current_tick:
-
+            # Not yet operational
             self.year_production_output = 0.0
+            self.potential_production_output = 0.0
+            self.take_or_pay_penalty = 0.0
+            self.curtailed_volume = 0.0
+            return
 
+        # Calculate potential production (what we WANT to produce - capacity)
+        potential_production = self.calculate_production_output()
+
+        # CLAUDE - Store potential for Total_Supply metric (graph analysis)
+        self.potential_production_output = potential_production
+
+        # Check if demand allocation exists (oversupply situation)
+        if hasattr(self.model, 'demand_allocation') and self.model.demand_allocation is not None:
+            # OVERSUPPLY: Respect allocated demand
+            allocated_production = self.model.demand_allocation.get(
+                self.site_id,
+                potential_production  # Fallback if not in allocation dict
+            )
+
+            # Cap production at allocated amount
+            actual_production = min(potential_production, allocated_production)
+
+            # Calculate penalty for curtailed contracted production
+            self.take_or_pay_penalty = self.calculate_take_or_pay_penalty(
+                allocated_production,
+                current_year
+            )
+
+            if actual_production < potential_production:
+                logger.info(
+                    f"{self.site_id} production curtailed: "
+                    f"potential={potential_production:,.0f}, "
+                    f"actual={actual_production:,.0f}, "
+                    f"penalty=${self.take_or_pay_penalty:,.0f}"
+                )
         else:
+            # No allocation (supply <= demand), produce freely
+            actual_production = potential_production
+            self.take_or_pay_penalty = 0.0
+            self.curtailed_volume = 0.0
 
-            self.year_production_output = self.calculate_production_output()
+        # CLAUDE - year_production_output is ACTUAL production (respects demand allocation)
+        # This is used for revenue calculation, EBIT, etc.
+        self.year_production_output = actual_production
 
  
 

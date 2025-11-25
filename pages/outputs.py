@@ -251,6 +251,24 @@ layout = html.Div(
 
         dcc.Store(id="store-feedstock-availability-graph", storage_type="session"),
 
+        # Additional Metrics stores
+
+        dcc.Store(id="store-graph-contract-vs-spot-prices", storage_type="session"),
+
+        dcc.Store(id="store-graph-feedstock-price-by-build-order", storage_type="session"),
+
+        dcc.Store(id="store-graph-npv-by-entry-year", storage_type="session"),
+
+        dcc.Store(id="store-graph-npv-heatmap", storage_type="session"),
+
+        dcc.Store(id="store-graph-roace-by-contract-coverage", storage_type="session"),
+
+        dcc.Store(id="store-graph-load-factors", storage_type="session"),
+
+        dcc.Store(id="store-graph-cumulative-penalties", storage_type="session"),
+
+        dcc.Store(id="store-graph-contract-renewals", storage_type="session"),
+
         # dcc.Store(id="store-fs-modal-graph", storage_type="session"),
 
         dbc.Container(
@@ -407,6 +425,20 @@ layout = html.Div(
 
                                         ),
 
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "Take-or-Pay: Curtailed Volume & Penalty Cost",
+
+                                                graph_id="graph-curtailed-volume-by-investor",
+
+                                            ),
+
+                                            md=6,
+
+                                        ),
+
                                     ]
 
                                 ),
@@ -518,6 +550,208 @@ layout = html.Div(
                                                     placeholder="Select a state",
 
                                                 ),
+
+                                            ),
+
+                                            md=6,
+
+                                        ),
+
+                                    ]
+
+                                ),
+
+                            ],
+
+                        ),
+
+                        dbc.Tab(
+
+                            label="Additional Metrics",
+
+                            tab_id="additional",
+
+                            children=[
+
+                                # Section 1: Price Dynamics
+
+                                html.H4("Price Dynamics & Contract Analysis", className="mt-3 mb-3", style={"color": "#0c72b6"}),
+
+                                dbc.Row(
+
+                                    [
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "Contract vs Spot Feedstock Prices",
+
+                                                subtitle="Differential escalation: contracts (rigid CPI) vs spot (net of tech improvement)",
+
+                                                graph_id="graph-contract-vs-spot-prices",
+
+                                            ),
+
+                                            md=6,
+
+                                        ),
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "Feedstock Price by Plant Build Order",
+
+                                                subtitle="Tiered pricing impact: early movers lock lower prices",
+
+                                                graph_id="graph-feedstock-price-by-build-order",
+
+                                            ),
+
+                                            md=6,
+
+                                        ),
+
+                                    ]
+
+                                ),
+
+
+
+                                # Section 2: Strategic Investment Analysis
+
+                                html.Hr(className="my-4"),
+
+                                html.H4("Strategic Investment Analysis", className="mb-3", style={"color": "#0c72b6"}),
+
+                                dbc.Row(
+
+                                    [
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "NPV by Entry Year & Contract Coverage",
+
+                                                subtitle="Early mover advantage: first-tier pricing vs late-entry penalties",
+
+                                                graph_id="graph-npv-by-entry-year",
+
+                                            ),
+
+                                            md=6,
+
+                                        ),
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "NPV Heatmap: Contract % vs Entry Year",
+
+                                                subtitle="Optimization landscape: find the sweet spot for contract coverage over time",
+
+                                                graph_id="graph-npv-heatmap",
+
+                                                height=450,
+
+                                            ),
+
+                                            md=6,
+
+                                        ),
+
+                                    ]
+
+                                ),
+
+
+
+                                # Section 3: Operational Performance
+
+                                html.Hr(className="my-4"),
+
+                                html.H4("Operational Performance & Risk", className="mb-3", style={"color": "#0c72b6"}),
+
+                                dbc.Row(
+
+                                    [
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "ROACE: High vs Low Contract Coverage",
+
+                                                subtitle="Risk/return trade-off: stability vs flexibility in contract strategy",
+
+                                                graph_id="graph-roace-by-contract-coverage",
+
+                                            ),
+
+                                            md=6,
+
+                                        ),
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "Contracted vs Spot Load Factors",
+
+                                                subtitle="Priority allocation during feedstock shortages: contracts protected, spot curtailed",
+
+                                                graph_id="graph-load-factors",
+
+                                            ),
+
+                                            md=6,
+
+                                        ),
+
+                                    ]
+
+                                ),
+
+
+
+                                # Section 4: Take-or-Pay & Contract Lifecycle
+
+                                html.Hr(className="my-4"),
+
+                                html.H4("Take-or-Pay Penalties & Contract Lifecycle", className="mb-3", style={"color": "#0c72b6"}),
+
+                                dbc.Row(
+
+                                    [
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "Cumulative Penalties by Plant (Ranked)",
+
+                                                subtitle="Total take-or-pay penalties: which plants bear the highest curtailment cost?",
+
+                                                graph_id="graph-cumulative-penalties",
+
+                                            ),
+
+                                            md=6,
+
+                                        ),
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "Contract Renewal Dynamics",
+
+                                                subtitle="Contract lifecycle: initial contracts vs renewals over time",
+
+                                                graph_id="graph-contract-renewals",
 
                                             ),
 

@@ -782,6 +782,14 @@ def register_callbacks(app: dash.Dash) -> None:
         df = pd.DataFrame(data)
 
 
+        # Filter out construction period - only show operational years
+        # A plant is operational when Production_Output > 0 for that year
+        if "Production_Output" in df.columns:
+            df["Production_Output"] = pd.to_numeric(df["Production_Output"], errors="coerce").fillna(0)
+            # Only keep rows where plant has started producing
+            df = df[df["Production_Output"] > 0].copy()
+
+
 
         x_col = "Year"
 
@@ -2069,21 +2077,192 @@ def register_callbacks(app: dash.Dash) -> None:
 
         
 
-    
 
-    
 
-    
+    # CLAUDE - Take-or-Pay Curtailed Volume & Penalty Graph
+    @app.callback(
+        Output("graph-curtailed-volume-by-investor", "figure"),
+        Input("store-saf-production-site", "data"),
+        Input("store-current-run-info", "data"),
+    )
+    def plot_curtailed_volume_by_investor(site_data, run_info):
+        """
+        Dual-axis graph showing:
+        - Left axis (bars): Curtailed volume per investor (stacked)
+        - Right axis (line): Total penalty cost
+        """
+        try:
+            if not site_data:
+                return go.Figure()
 
-    
+            df = pd.DataFrame(site_data)
 
-    
+            # Check if required columns exist
+            if "Curtailed_Volume" not in df.columns or "Take_Or_Pay_Penalty" not in df.columns:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="Curtailment data not available (no take-or-pay penalties recorded)",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=14)
+                )
+                fig.update_layout(title="Take-or-Pay: Curtailed Volume & Penalty Cost")
+                return fig
 
-    
+            # Convert to numeric
+            if "Year" in df.columns:
+                df["Year"] = pd.to_numeric(df["Year"], errors="coerce").astype("Int64")
+            else:
+                return go.Figure()
 
-    
+            df["Curtailed_Volume"] = pd.to_numeric(df["Curtailed_Volume"], errors="coerce").fillna(0.0)
+            df["Take_Or_Pay_Penalty"] = pd.to_numeric(df["Take_Or_Pay_Penalty"], errors="coerce").fillna(0.0)
 
-    
+            if "Investor_ID" in df.columns:
+                df["Investor_ID"] = df["Investor_ID"].fillna("Unknown")
+            else:
+                df["Investor_ID"] = "Unknown"
+
+            # Drop rows without valid year
+            df = df.dropna(subset=["Year"]).copy()
+            if len(df) == 0:
+                return go.Figure()
+            df["Year"] = df["Year"].astype(int)
+        except Exception as e:
+            # Return error message in figure
+            fig = go.Figure()
+            fig.add_annotation(
+                text=f"Error loading data: {str(e)}",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=14, color="red")
+            )
+            fig.update_layout(title="Take-or-Pay: Curtailed Volume & Penalty Cost")
+            return fig
+
+        # Aggregate curtailed volume: Year × Investor_ID
+        curtailed = (
+            df.groupby(["Year", "Investor_ID"], as_index=False)["Curtailed_Volume"]
+            .sum()
+            .sort_values(["Year", "Investor_ID"])
+        )
+
+        # Filter out investors with zero curtailed volume
+        investor_totals = curtailed.groupby("Investor_ID")["Curtailed_Volume"].sum()
+        active_investors = investor_totals[investor_totals > 0].index.tolist()
+
+        if len(active_investors) == 0:
+            # No curtailment data, return empty figure with message
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No take-or-pay curtailment occurred in this simulation",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16)
+            )
+            fig.update_layout(title="Take-or-Pay: Curtailed Volume & Penalty Cost")
+            return fig
+
+        curtailed = curtailed[curtailed["Investor_ID"].isin(active_investors)]
+
+        # Aggregate total penalty per year
+        penalty_total = (
+            df.groupby("Year", as_index=False)["Take_Or_Pay_Penalty"]
+            .sum()
+            .sort_values("Year")
+        )
+
+        # Order investors by total curtailed volume for stable legend
+        investor_order = (
+            curtailed.groupby("Investor_ID")["Curtailed_Volume"]
+            .sum()
+            .sort_values(ascending=False)
+            .index.tolist()
+        )
+
+        # Create figure with secondary y-axis
+        fig = go.Figure()
+
+        # Add stacked bars for curtailed volume (left axis)
+        for investor in investor_order:
+            investor_data = curtailed[curtailed["Investor_ID"] == investor]
+            fig.add_trace(
+                go.Bar(
+                    x=investor_data["Year"],
+                    y=investor_data["Curtailed_Volume"],
+                    name=investor,
+                    hovertemplate="<b>Year %{x}</b><br>%{fullData.name}: %{y:,.0f} tonnes<extra></extra>",
+                    yaxis="y1"
+                )
+            )
+
+        # Add line for total penalty cost (right axis)
+        if not penalty_total.empty and penalty_total["Take_Or_Pay_Penalty"].sum() > 0:
+            fig.add_trace(
+                go.Scatter(
+                    x=penalty_total["Year"],
+                    y=penalty_total["Take_Or_Pay_Penalty"],
+                    mode="lines+markers",
+                    name="Total Penalty Cost",
+                    line=dict(color="red", width=3, dash="dash"),
+                    marker=dict(size=8, symbol="diamond"),
+                    yaxis="y2",
+                    hovertemplate="<b>Year %{x}</b><br>Penalty: $%{y:,.0f}<extra></extra>"
+                )
+            )
+
+        # Update layout with dual axes and improved visual formatting
+        fig.update_layout(
+            title="Take-or-Pay: Curtailed Volume & Penalty Cost",
+            xaxis=dict(
+                title="Year",
+                tickmode="linear",
+                dtick=2,  # Show every 2nd year to reduce crowding
+                tickangle=-45,  # Rotate labels for better readability
+                tickfont=dict(size=10)
+            ),
+            yaxis=dict(
+                title=dict(text="Curtailed Volume (tonnes)", font=dict(color="#1f77b4")),
+                tickfont=dict(color="#1f77b4", size=10),
+                tickformat=",",
+                side="left"
+            ),
+            yaxis2=dict(
+                title=dict(text="Total Penalty Cost (USD)", font=dict(color="red")),
+                tickfont=dict(color="red", size=10),
+                tickformat="$,.0f",
+                overlaying="y",
+                side="right"
+            ),
+            barmode="stack",
+            legend=dict(
+                title=dict(text="Investor"),
+                orientation="v",
+                x=1.15,  # Move legend to the right
+                y=0.5,
+                xanchor="left",
+                yanchor="middle",
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="rgba(0,0,0,0.2)",
+                borderwidth=1
+            ),
+            bargap=0.2,
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            hovermode="x unified",
+            margin=dict(l=80, r=250, t=100, b=80),  # Increase margins for better spacing
+            height=450  # Slightly taller for better readability
+        )
+
+        # Add run info to title
+        if run_info:
+            run_name = run_info.get("run_name", "Unknown")
+            display_date = run_info.get("display_date", "")
+            fig.update_layout(
+                title=f"Take-or-Pay: Curtailed Volume & Penalty Cost<br><sub>Run: {run_name} | {display_date}</sub>"
+            )
+
+        return fig
 
     # ----------------- Batch Graphs -----------------
 
@@ -4079,12 +4258,495 @@ def register_callbacks(app: dash.Dash) -> None:
 
         return fig
 
- 
+    # ========================================================================
+    # ADDITIONAL METRICS CALLBACKS
+    # ========================================================================
 
- 
+    @app.callback(
+        Output("graph-contract-vs-spot-prices", "figure"),
+        Input("store-feedstock-aggregator", "data"),
+        Input("store-current-run-info", "data"),
+    )
+    def plot_contract_vs_spot_prices(aggregator_data, run_info):
+        """
+        Graph 3: Contract vs Spot Feedstock Prices over time
+        Shows differential escalation: contracts (rigid CPI) vs spot (net of tech improvement)
+        """
+        if not aggregator_data or not run_info:
+            return go.Figure()
 
- 
+        try:
+            df = pd.DataFrame(aggregator_data)
 
- 
+            # Get config to check escalation rates
+            config = run_info.get("config", {})
+            contract_escalation = float(config.get("contract_escalation_rate", 0.0))
+            market_escalation = float(config.get("market_escalation_rate", 0.0))
 
- 
+            # Convert columns
+            df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+            df = df.dropna(subset=["Year"])
+            df["State_ID"] = df["State_ID"].fillna("Unknown") if "State_ID" in df.columns else "Unknown"
+
+            # Use available price column (State_Spot_Price or Feedstock_Price)
+            price_col = None
+            if "State_Spot_Price" in df.columns:
+                price_col = "State_Spot_Price"
+            elif "Feedstock_Price" in df.columns:
+                price_col = "Feedstock_Price"
+
+            if price_col is None:
+                return go.Figure()
+
+            df[price_col] = pd.to_numeric(df[price_col], errors="coerce").fillna(0)
+            price_avg = df.groupby("Year")[price_col].mean().reset_index()
+            price_avg.columns = ["Year", "Price"]
+
+            fig = go.Figure()
+
+            # Add price line
+            if not price_avg.empty:
+                fig.add_trace(go.Scatter(
+                    x=price_avg["Year"],
+                    y=price_avg["Price"],
+                    mode="lines+markers",
+                    name=f"Feedstock Price (escalation: {market_escalation:.1%})",
+                    line=dict(color="#2ca02c", width=3),
+                    marker=dict(size=6),
+                ))
+
+            fig.update_layout(
+                title="Feedstock Prices Over Time",
+                xaxis_title="Year",
+                yaxis_title="Price (USD/tonne)",
+                hovermode="x unified",
+                legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.8)"),
+                template="plotly_white",
+            )
+
+            return fig
+        except Exception as e:
+            print(f"Error in plot_contract_vs_spot_prices: {e}")
+            return go.Figure()
+
+    @app.callback(
+        Output("graph-feedstock-price-by-build-order", "figure"),
+        Input("store-saf-production-site", "data"),
+        Input("store-feedstock-aggregator", "data"),
+    )
+    def plot_feedstock_price_by_build_order(site_data, aggregator_data):
+        """
+        Graph 6: Feedstock Price by Plant Build Order
+        Shows tiered pricing impact: early movers lock in lower tier prices
+        """
+        if not site_data or not aggregator_data:
+            return go.Figure()
+
+        try:
+            df_sites = pd.DataFrame(site_data)
+            df_agg = pd.DataFrame(aggregator_data)
+
+            # Check required columns exist
+            if "Year" not in df_sites.columns or "Unique_ID" not in df_sites.columns:
+                return go.Figure()
+
+            df_sites["Year"] = pd.to_numeric(df_sites["Year"], errors="coerce")
+            df_sites = df_sites.dropna(subset=["Year"])
+
+            # Use Unique_ID as Site_ID
+            site_id_col = "Unique_ID"
+            df_sites["Site_ID"] = df_sites[site_id_col].astype(str)
+
+            # Get first year each plant appears
+            first_year = df_sites.groupby("Site_ID")["Year"].min().reset_index()
+            first_year.columns = ["Site_ID", "Entry_Year"]
+
+            # Get price from aggregator (use State_Spot_Price or Feedstock_Price)
+            price_col = "State_Spot_Price" if "State_Spot_Price" in df_agg.columns else "Feedstock_Price"
+            if price_col not in df_agg.columns:
+                return go.Figure()
+
+            df_agg["Year"] = pd.to_numeric(df_agg["Year"], errors="coerce")
+            df_agg = df_agg.dropna(subset=["Year"])
+            df_agg[price_col] = pd.to_numeric(df_agg[price_col], errors="coerce")
+
+            # Get average price per year
+            price_by_year = df_agg.groupby("Year")[price_col].mean().reset_index()
+
+            # Merge entry year with price
+            df_plot = first_year.merge(price_by_year, left_on="Entry_Year", right_on="Year", how="left")
+            df_plot = df_plot.dropna(subset=[price_col])
+
+            if df_plot.empty:
+                return go.Figure()
+
+            # Sort by entry year
+            df_plot = df_plot.sort_values("Entry_Year")
+
+            fig = go.Figure()
+
+            fig.add_trace(go.Bar(
+                x=df_plot["Site_ID"],
+                y=df_plot[price_col],
+                marker_color="#2ca02c",
+                hovertemplate="<b>%{x}</b><br>Price: $%{y:.0f}/tonne<br>Entry Year: %{customdata}<extra></extra>",
+                customdata=df_plot["Entry_Year"],
+            ))
+
+            fig.update_layout(
+                title="Feedstock Price by Plant Entry Year",
+                xaxis_title="Plant ID (ordered by entry)",
+                yaxis_title="Feedstock Price (USD/tonne)",
+                hovermode="closest",
+                template="plotly_white",
+                showlegend=False,
+            )
+
+            return fig
+        except Exception as e:
+            print(f"Error in plot_feedstock_price_by_build_order: {e}")
+            return go.Figure()
+
+    @app.callback(
+        Output("graph-npv-by-entry-year", "figure"),
+        Input("store-investor", "data"),
+        Input("store-saf-production-site", "data"),
+    )
+    def plot_npv_by_entry_year(investor_data, site_data):
+        """
+        Graph 4: NPV by Entry Year & Contract Coverage
+        Shows early mover advantage and contract coverage strategies
+        """
+        if not investor_data:
+            return go.Figure()
+
+        try:
+            df_inv = pd.DataFrame(investor_data)
+
+            # Check required columns
+            if "Year" not in df_inv.columns or "Investor_ID" not in df_inv.columns:
+                return go.Figure()
+
+            # NPV might not exist yet, use ROACE or EBIT as proxy
+            value_col = None
+            if "NPV" in df_inv.columns:
+                value_col = "NPV"
+                ylabel = "NPV (USD Million)"
+            elif "EBIT" in df_inv.columns:
+                value_col = "EBIT"
+                ylabel = "EBIT (USD)"
+            else:
+                return go.Figure()
+
+            df_inv[value_col] = pd.to_numeric(df_inv[value_col], errors="coerce")
+            df_inv["Investor_ID"] = df_inv["Investor_ID"].astype(str)
+            df_inv["Year"] = pd.to_numeric(df_inv["Year"], errors="coerce")
+            df_inv = df_inv.dropna(subset=["Year", value_col])
+
+            # Get entry year
+            entry_years = df_inv.groupby("Investor_ID")["Year"].min().reset_index()
+            entry_years.columns = ["Investor_ID", "Entry_Year"]
+
+            # Get latest value
+            latest_year = df_inv.groupby("Investor_ID")["Year"].max().reset_index()
+            df_latest = df_inv.merge(latest_year, on=["Investor_ID", "Year"])
+            df_latest = df_latest.merge(entry_years, on="Investor_ID")
+
+            # Use Avg_Contract_Coverage if available
+            if "Avg_Contract_Coverage" in df_latest.columns:
+                df_latest["Contract_Coverage"] = pd.to_numeric(df_latest["Avg_Contract_Coverage"], errors="coerce")
+            else:
+                df_latest["Contract_Coverage"] = 0.8
+
+            if df_latest.empty:
+                return go.Figure()
+
+            fig = go.Figure()
+
+            fig.add_trace(go.Scatter(
+                x=df_latest["Entry_Year"],
+                y=df_latest[value_col],
+                mode="markers",
+                marker=dict(size=12, color="#2ca02c", opacity=0.7),
+                hovertemplate="<b>Investor %{customdata}</b><br>Entry Year: %{x}<br>" + ylabel + ": %{y:,.0f}<extra></extra>",
+                customdata=df_latest["Investor_ID"],
+            ))
+
+            fig.update_layout(
+                title=f"{value_col} by Entry Year",
+                xaxis_title="Market Entry Year",
+                yaxis_title=ylabel,
+                hovermode="closest",
+                template="plotly_white",
+            )
+
+            return fig
+        except Exception as e:
+            print(f"Error in plot_npv_by_entry_year: {e}")
+            return go.Figure()
+
+    @app.callback(
+        Output("graph-npv-heatmap", "figure"),
+        Input("store-investor", "data"),
+        Input("store-saf-production-site", "data"),
+    )
+    def plot_npv_heatmap(investor_data, site_data):
+        """
+        Graph 9: NPV Heatmap by Contract % and Entry Year
+        2D optimization landscape showing sweet spot
+        """
+        if not investor_data:
+            return go.Figure()
+
+        try:
+            df_inv = pd.DataFrame(investor_data)
+
+            # Not enough data for heatmap yet - requires multiple investors with varying contract coverage
+            # Return simple message for now
+            fig = go.Figure()
+            fig.add_annotation(
+                text="Heatmap requires multiple simulation runs with varying contract coverage",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=14, color="gray")
+            )
+            fig.update_layout(
+                title="NPV Optimization Landscape: Contract % vs Entry Year",
+                template="plotly_white",
+            )
+            return fig
+        except Exception as e:
+            print(f"Error in plot_npv_heatmap: {e}")
+            return go.Figure()
+
+    @app.callback(
+        Output("graph-roace-by-contract-coverage", "figure"),
+        Input("store-saf-production-site", "data"),
+    )
+    def plot_roace_by_contract_coverage(site_data):
+        """
+        Graph 7: ROACE over time by Contract Coverage
+        Risk/return trade-off: stability vs flexibility
+        """
+        if not site_data:
+            return go.Figure()
+
+        try:
+            df = pd.DataFrame(site_data)
+
+            # Check required columns - ROACE might be in investor data, not site data
+            # For now, show a placeholder message
+            fig = go.Figure()
+            fig.add_annotation(
+                text="ROACE by contract coverage requires investor-level data aggregation",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=14, color="gray")
+            )
+            fig.update_layout(
+                title="ROACE by Contract Coverage Strategy",
+                template="plotly_white",
+            )
+            return fig
+        except Exception as e:
+            print(f"Error in plot_roace_by_contract_coverage: {e}")
+            return go.Figure()
+
+    @app.callback(
+        Output("graph-load-factors", "figure"),
+        Input("store-feedstock-aggregator", "data"),
+    )
+    def plot_load_factors(aggregator_data):
+        """
+        Graph 5: Contracted vs Spot Load Factors
+        Priority allocation during feedstock shortages
+        """
+        if not aggregator_data:
+            return go.Figure()
+
+        try:
+            df = pd.DataFrame(aggregator_data)
+
+            if "Year" not in df.columns or "Annual_Load_Factor" not in df.columns:
+                return go.Figure()
+
+            df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+            df = df.dropna(subset=["Year"])
+            df["Annual_Load_Factor"] = pd.to_numeric(df["Annual_Load_Factor"], errors="coerce")
+
+            # Average load factor per year
+            lf_avg = df.groupby("Year")["Annual_Load_Factor"].mean().reset_index()
+
+            if lf_avg.empty:
+                return go.Figure()
+
+            fig = go.Figure()
+
+            fig.add_trace(go.Scatter(
+                x=lf_avg["Year"],
+                y=lf_avg["Annual_Load_Factor"],
+                mode="lines+markers",
+                name="Annual Load Factor",
+                line=dict(color="#2ca02c", width=3),
+                marker=dict(size=8),
+            ))
+
+            # Add reference line at 1.0
+            fig.add_hline(y=1.0, line_dash="dot", line_color="gray", annotation_text="Full Supply")
+
+            fig.update_layout(
+                title="Annual Load Factor Over Time",
+                xaxis_title="Year",
+                yaxis_title="Load Factor (1.0 = full supply)",
+                hovermode="x unified",
+                template="plotly_white",
+                legend=dict(x=0.02, y=0.02, bgcolor="rgba(255,255,255,0.8)"),
+            )
+
+            return fig
+        except Exception as e:
+            print(f"Error in plot_load_factors: {e}")
+            return go.Figure()
+
+    @app.callback(
+        Output("graph-cumulative-penalties", "figure"),
+        Input("store-saf-production-site", "data"),
+    )
+    def plot_cumulative_penalties(site_data):
+        """
+        Graph 10: Cumulative Penalties by Plant (Ranked)
+        Total take-or-pay penalties showing exposure
+        """
+        if not site_data:
+            return go.Figure()
+
+        try:
+            df = pd.DataFrame(site_data)
+
+            # Check for Take_Or_Pay_Penalty column (note underscore capitalization)
+            penalty_col = "Take_Or_Pay_Penalty" if "Take_Or_Pay_Penalty" in df.columns else "Take_or_Pay_Penalty"
+            if penalty_col not in df.columns:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="No take-or-pay penalty data available in current model version",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=14, color="gray")
+                )
+                fig.update_layout(
+                    title="Cumulative Take-or-Pay Penalties by Plant",
+                    template="plotly_white",
+                )
+                return fig
+
+            df[penalty_col] = pd.to_numeric(df[penalty_col], errors="coerce").fillna(0)
+            df["Site_ID"] = df["Unique_ID"].astype(str) if "Unique_ID" in df.columns else "Unknown"
+
+            # Sum penalties per plant
+            penalties = df.groupby("Site_ID")[penalty_col].sum().reset_index()
+            penalties.columns = ["Site_ID", "Total_Penalty"]
+
+            # Filter plants with penalties > 0
+            penalties = penalties[penalties["Total_Penalty"] > 0]
+
+            if penalties.empty:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="No take-or-pay penalties occurred in this simulation",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=14, color="gray")
+                )
+                fig.update_layout(
+                    title="Cumulative Take-or-Pay Penalties by Plant",
+                    template="plotly_white",
+                )
+                return fig
+
+            # Sort by penalty
+            penalties = penalties.sort_values("Total_Penalty", ascending=False)
+
+            fig = go.Figure()
+
+            fig.add_trace(go.Bar(
+                x=penalties["Site_ID"],
+                y=penalties["Total_Penalty"],
+                marker_color="#d62728",
+                hovertemplate="<b>%{x}</b><br>Total Penalty: $%{y:,.0f}<extra></extra>",
+            ))
+
+            fig.update_layout(
+                title="Cumulative Take-or-Pay Penalties by Plant (Ranked)",
+                xaxis_title="Plant ID (ranked by penalty)",
+                yaxis_title="Total Penalties (USD)",
+                template="plotly_white",
+                showlegend=False,
+            )
+
+            return fig
+        except Exception as e:
+            print(f"Error in plot_cumulative_penalties: {e}")
+            return go.Figure()
+
+    @app.callback(
+        Output("graph-contract-renewals", "figure"),
+        Input("store-saf-production-site", "data"),
+    )
+    def plot_contract_renewals(site_data):
+        """
+        Graph 11: Contract Renewal Dynamics
+        Contract lifecycle: initial vs renewals over time
+        """
+        if not site_data:
+            return go.Figure()
+
+        try:
+            df = pd.DataFrame(site_data)
+
+            # Check required columns
+            if "Year" not in df.columns or "Unique_ID" not in df.columns:
+                return go.Figure()
+
+            df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+            df = df.dropna(subset=["Year"])
+            df["Site_ID"] = df["Unique_ID"].astype(str)
+
+            # Count number of unique sites per year
+            site_counts = df.groupby("Year")["Site_ID"].nunique().reset_index()
+            site_counts.columns = ["Year", "Active_Sites"]
+
+            if site_counts.empty:
+                return go.Figure()
+
+            fig = go.Figure()
+
+            fig.add_trace(go.Bar(
+                x=site_counts["Year"],
+                y=site_counts["Active_Sites"],
+                marker_color="#1f77b4",
+                name="Active Plants",
+            ))
+
+            fig.update_layout(
+                title="Active Production Plants Over Time",
+                xaxis_title="Year",
+                yaxis_title="Number of Active Plants",
+                hovermode="x unified",
+                template="plotly_white",
+                showlegend=False,
+            )
+
+            return fig
+        except Exception as e:
+            print(f"Error in plot_contract_renewals: {e}")
+            return go.Figure()
+
+
+
+
+
+
+
+
+
+
