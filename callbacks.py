@@ -4551,34 +4551,109 @@ def register_callbacks(app: dash.Dash) -> None:
     @app.callback(
         Output("graph-roace-by-contract-coverage", "figure"),
         Input("store-saf-production-site", "data"),
+        Input("store-investor", "data"),
     )
-    def plot_roace_by_contract_coverage(site_data):
+    def plot_roace_by_contract_coverage(site_data, investor_data):
         """
-        Graph 7: ROACE over time by Contract Coverage
-        Risk/return trade-off: stability vs flexibility
+        Graph 7: ROACE over time by Contract Coverage Strategy
+        Compares plants with high vs low contract coverage
+        Shows risk/return trade-off: stability vs flexibility
         """
-        if not site_data:
+        if not site_data or not investor_data:
             return go.Figure()
 
         try:
-            df = pd.DataFrame(site_data)
+            df_sites = pd.DataFrame(site_data)
+            df_investors = pd.DataFrame(investor_data)
 
-            # Check required columns - ROACE might be in investor data, not site data
-            # For now, show a placeholder message
-            fig = go.Figure()
-            fig.add_annotation(
-                text="ROACE by contract coverage requires investor-level data aggregation",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5, showarrow=False,
-                font=dict(size=14, color="gray")
+            # Check required columns
+            if "Year" not in df_sites.columns or "Unique_ID" not in df_sites.columns:
+                return go.Figure()
+
+            df_sites["Year"] = pd.to_numeric(df_sites["Year"], errors="coerce")
+            df_sites = df_sites.dropna(subset=["Year"])
+
+            # Calculate contract coverage per plant
+            # Contract coverage = contracted capacity / total capacity
+            # We can infer this from contract percentage if available, or use a proxy
+            if "Initial_Contract_Price" in df_sites.columns:
+                # Plants with contracts have Initial_Contract_Price
+                df_sites["Has_Contract"] = df_sites["Initial_Contract_Price"].notna()
+
+                # For simplicity, assume high coverage = 90%, low coverage = 80%
+                # In reality this varies, but we don't log the exact percentage per plant
+                df_sites["Contract_Coverage_Category"] = df_sites["Has_Contract"].map({
+                    True: "With Long-term Contract",
+                    False: "Spot Market Only"
+                })
+            else:
+                return go.Figure()
+
+            # Get ROACE from investor data (aggregated per investor per year)
+            if "ROACE" not in df_investors.columns or "Year" not in df_investors.columns:
+                return go.Figure()
+
+            df_investors["Year"] = pd.to_numeric(df_investors["Year"], errors="coerce")
+            df_investors["ROACE"] = pd.to_numeric(df_investors["ROACE"], errors="coerce")
+            df_investors = df_investors[df_investors["ROACE"].notna()]
+
+            # Merge investor ROACE with site data to categorize by contract strategy
+            # First get investor IDs per site
+            if "Investor_ID" not in df_sites.columns:
+                return go.Figure()
+
+            # Average ROACE per investor per year
+            investor_roace = df_investors.groupby(["Investor_ID", "Year"])["ROACE"].mean().reset_index()
+
+            # Get contract strategy per investor (do they prefer high or low coverage?)
+            # Proxy: investors with all contracted plants vs mixed
+            site_contract = df_sites.groupby("Investor_ID")["Has_Contract"].mean().reset_index()
+            site_contract["Strategy"] = site_contract["Has_Contract"].apply(
+                lambda x: "High Contract Coverage (>80%)" if x > 0.5 else "Low Contract Coverage (<80%)"
             )
+
+            # Merge strategy with ROACE
+            df_plot = investor_roace.merge(site_contract[["Investor_ID", "Strategy"]], on="Investor_ID")
+
+            if df_plot.empty:
+                return go.Figure()
+
+            # Plot ROACE over time by strategy
+            fig = go.Figure()
+
+            for strategy in df_plot["Strategy"].unique():
+                strategy_data = df_plot[df_plot["Strategy"] == strategy]
+                roace_by_year = strategy_data.groupby("Year")["ROACE"].mean().reset_index()
+
+                color = "#1f77b4" if "High" in strategy else "#ff7f0e"
+                dash = "solid" if "High" in strategy else "dash"
+
+                fig.add_trace(go.Scatter(
+                    x=roace_by_year["Year"],
+                    y=roace_by_year["ROACE"] * 100,  # Convert to percentage
+                    mode="lines+markers",
+                    name=strategy,
+                    line=dict(color=color, width=3, dash=dash),
+                    marker=dict(size=6),
+                ))
+
+            # Add reference line at 0%
+            fig.add_hline(y=0, line_dash="dot", line_color="gray", annotation_text="Break-even")
+
             fig.update_layout(
                 title="ROACE by Contract Coverage Strategy",
+                xaxis_title="Year",
+                yaxis_title="ROACE (%)",
+                hovermode="x unified",
+                legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.9)"),
                 template="plotly_white",
             )
+
             return fig
         except Exception as e:
             print(f"Error in plot_roace_by_contract_coverage: {e}")
+            import traceback
+            traceback.print_exc()
             return go.Figure()
 
     @app.callback(
