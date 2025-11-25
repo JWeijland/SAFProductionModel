@@ -88,7 +88,26 @@ class SAFMarketModel(Model):
                 "Consumer_Price": lambda m: getattr(m, "market_price", None),
                 "Market_Price": lambda m: getattr(m, "market_price", None),
                 "Demand": lambda m: getattr(m, "demand", None),
+                # CLAUDE - MARKET PRICE FIX: Total_Supply shows TRUE capacity (like copy_0)
+                # This is the maximum production capability considering feedstock availability
+                # Formula: max_capacity × design_load_factor × annual_load_factor
+                #
+                # NOTE: EXCLUDES streamday_percentage (following copy_0 principle)
+                # Streamday represents operational inefficiency (maintenance, breakdowns), not capacity constraint.
+                # Market capacity should reflect what's technically possible with available feedstock,
+                # not what's achieved with operational losses.
+                #
+                # This is used for "Supply vs Demand" graph and market price calculation.
+                # Actual production (with streamday) is ~30% lower and tracked in Actual_Production metric.
                 "Total_Supply": lambda m: sum(
+                    (site.max_capacity * site.design_load_factor *
+                     site.aggregator.annual_load_factor)
+                    for site in getattr(m, "production_sites", [])
+                    if site.operational_year <= m.schedule.time
+                ),
+                # CLAUDE - TAKE-OR-PAY: Actual_Production shows REALIZED production (respects demand allocation)
+                # This is always <= demand when allocation is enabled
+                "Actual_Production": lambda m: sum(
                     (
                         site.year_production_output.get(m.schedule.time, 0.0)
                         if isinstance(site.year_production_output, dict)
@@ -150,9 +169,20 @@ class SAFMarketModel(Model):
                 "State_ID": lambda a: getattr(a, "state_id", None),
                 "Investor_ID": lambda a: getattr(a, "investor_id", None),
                 "Production_Output": lambda a: (
-                    getattr(a, "tick_production_output", None)
-                    if hasattr(a, "tick_production_output")
-                    else None
+                    getattr(a, "year_production_output", None)
+                    if hasattr(a, "year_production_output")
+                    else getattr(a, "tick_production_output", None)
+                ),
+                # CLAUDE - Take-or-Pay metrics for curtailment visualization
+                "Curtailed_Volume": lambda a: (
+                    getattr(a, "curtailed_volume", 0.0)
+                    if hasattr(a, "curtailed_volume")
+                    else 0.0
+                ),
+                "Take_Or_Pay_Penalty": lambda a: (
+                    getattr(a, "take_or_pay_penalty", 0.0)
+                    if hasattr(a, "take_or_pay_penalty")
+                    else 0.0
                 ),
                 "SRMC": lambda a: (
                     getattr(a, "srmc", None) if hasattr(a, "srmc") else None
@@ -603,6 +633,28 @@ class SAFMarketModel(Model):
                         )
         # CLAUDE END - Contract Renewal: Automatically renew expired contracts BEFORE production
 
+        # CLAUDE START - TAKE-OR-PAY: Allocate demand before production
+        # When market has oversupply, we must allocate limited demand across sites.
+        # This prevents overproduction and triggers take-or-pay penalties for curtailed contracts.
+        current_year = year_for_tick(self.config["start_year"], self.schedule.time)
+        total_demand = get_saf_demand_forecast(
+            current_year,
+            self.config,
+            self.atf_demand_forecast
+        )
+
+        # Check if feature is enabled
+        if self.config.get('enable_demand_allocation', True):
+            self.demand_allocation = self.allocate_demand_to_sites(
+                self.production_sites,
+                total_demand,
+                current_year
+            )
+        else:
+            # Feature disabled, no allocation (everyone produces freely)
+            self.demand_allocation = None
+        # CLAUDE END - TAKE-OR-PAY: Allocate demand before production
+
         for agent in self.schedule.agents:
             agent.produce()
 
@@ -721,10 +773,110 @@ class SAFMarketModel(Model):
             current_tick=self.schedule.time,
         )
  
+    def allocate_demand_to_sites(
+        self,
+        production_sites: list,
+        total_demand: float,
+        current_year: int
+    ) -> dict:
+        """
+        Allocate limited demand to production sites with contract priority.
+
+        When total potential supply > demand, we must decide which sites produce.
+        Priority order:
+        1. Higher contract coverage percentage (contracted_capacity / max_capacity)
+        2. Lower SRMC (cheaper production)
+
+        This implements a realistic market clearing where:
+        - Contracted capacity gets priority (firm commitments)
+        - Merit order (cost) determines spot allocation
+        - Sites that can't produce due to oversupply may pay take-or-pay penalties
+
+        Parameters:
+            production_sites: List of SAFProductionSite objects
+            total_demand: Total market demand for this tick
+            current_year: Current calendar year
+
+        Returns:
+            Dict[site_id, allocated_production]: How much each site is allowed to produce
+        """
+        # Calculate potential production for each operational site
+        sites_data = []
+        for site in production_sites:
+            current_tick = self.schedule.time
+
+            # Skip non-operational sites
+            if site.operational_year > current_tick:
+                continue
+
+            contracted_cap = site.get_contracted_capacity(current_year)
+            spot_cap = site.get_spot_capacity(current_year)
+            contract_percentage = contracted_cap / site.max_capacity if site.max_capacity > 0 else 0
+
+            # Potential production (what they WANT to produce)
+            potential_production = site.calculate_production_output()
+
+            sites_data.append({
+                'site': site,
+                'site_id': site.site_id,
+                'contracted_capacity': contracted_cap,
+                'spot_capacity': spot_cap,
+                'contract_percentage': contract_percentage,
+                'srmc': site.calculate_srmc(current_year),
+                'potential_production': potential_production
+            })
+
+        # Calculate total potential supply
+        total_potential_supply = sum(s['potential_production'] for s in sites_data)
+
+        # Check if allocation is needed
+        if total_potential_supply <= total_demand:
+            # No oversupply, everyone produces what they want
+            logger.debug(
+                f"No demand allocation needed: supply={total_potential_supply:,.0f}, "
+                f"demand={total_demand:,.0f}"
+            )
+            return {s['site_id']: s['potential_production'] for s in sites_data}
+
+        # OVERSUPPLY: Allocate demand with priority
+        logger.info(
+            f"OVERSUPPLY DETECTED: supply={total_potential_supply:,.0f}, "
+            f"demand={total_demand:,.0f}, excess={total_potential_supply - total_demand:,.0f}"
+        )
+
+        # Sort by priority: contract % DESC, then SRMC ASC
+        sites_data.sort(key=lambda x: (-x['contract_percentage'], x['srmc']))
+
+        # Allocate demand sequentially
+        remaining_demand = total_demand
+        allocation = {}
+
+        for site_data in sites_data:
+            if remaining_demand <= 0:
+                # No more demand, this site produces ZERO
+                allocation[site_data['site_id']] = 0.0
+                logger.info(
+                    f"Site {site_data['site_id']} curtailed: no demand remaining "
+                    f"(potential={site_data['potential_production']:,.0f})"
+                )
+            else:
+                # Allocate up to potential, limited by remaining demand
+                allocated = min(site_data['potential_production'], remaining_demand)
+                allocation[site_data['site_id']] = allocated
+                remaining_demand -= allocated
+
+                if allocated < site_data['potential_production']:
+                    logger.info(
+                        f"Site {site_data['site_id']} partially curtailed: "
+                        f"allocated={allocated:,.0f}, potential={site_data['potential_production']:,.0f}"
+                    )
+
+        return allocation
+
     def new_investor(self) -> None:
         """
         Introduce and evaluate a prospective new investor entrant.
- 
+
         Process:
           - Instantiate 'potential' investor with current market context.
           - Run investment_mechanism (site evaluation & potential investment).

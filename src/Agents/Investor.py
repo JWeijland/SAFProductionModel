@@ -955,7 +955,19 @@ class Investor(Agent):
         )
         # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX
 
-        site.ebit = revenue - cost
+        # CLAUDE START - TAKE-OR-PAY: Subtract penalty from EBIT
+        # If site was curtailed due to oversupply, it must pay take-or-pay penalty
+        # for contracted feedstock it committed to buy but couldn't use
+        take_or_pay_penalty = getattr(site, 'take_or_pay_penalty', 0.0)
+
+        if take_or_pay_penalty > 0:
+            logger.info(
+                f"Site {site.site_id} EBIT before penalty: ${revenue - cost:,.0f}, "
+                f"penalty: ${take_or_pay_penalty:,.0f}"
+            )
+        # CLAUDE END - TAKE-OR-PAY
+
+        site.ebit = revenue - cost - take_or_pay_penalty
 
         return site.ebit
 

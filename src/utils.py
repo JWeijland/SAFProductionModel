@@ -1,7 +1,11 @@
-from typing import List, Dict
-from src.Agents.SAF_Production_Site import SAFProductionSite
+from __future__ import annotations  # CLAUDE FIX - Enable forward references for type hints
+from typing import List, Dict, TYPE_CHECKING
 import logging
 import math
+
+# CLAUDE FIX - Avoid circular import: Only import for type hints
+if TYPE_CHECKING:
+    from src.Agents.SAF_Production_Site import SAFProductionSite
  
 logger = logging.getLogger(__name__)
  
@@ -181,8 +185,8 @@ def find_operational_sites(production_sites, year, prediction=False, model=None)
       - Includes sites with operational_year <= year (already operational)
       - ALSO includes sites under construction that will become operational within forecast window
       - Production output:
-          * prediction=True  -> max_capacity * design_load_factor
-          * prediction=False -> max_capacity * design_load_factor * current annual load factor
+          * prediction=True  -> max_capacity * design_load_factor (potential production for forecasts)
+          * prediction=False -> site.year_production_output (ACTUAL production for market clearing)
 
     # CLAUDE START - Phase 2 CONTRACT OBLIGATION FIX: Merit Order Design Decision
     # Merit order now uses MARKET-ESCALATED SRMC with technological improvement.
@@ -258,14 +262,39 @@ def find_operational_sites(production_sites, year, prediction=False, model=None)
                         # Different from contract SRMC which escalates at 3%/year
                         "srmc": site.calculate_srmc(current_year=current_year),
                         # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION
+                        # CLAUDE START - MARKET PRICE FIX: Use true capacity (like copy_0)
+                        # Market price is based on TRUE capacity (max physical production capability).
+                        #
+                        # Following copy_0 principle:
+                        # - prediction=True:  max_capacity × design_load_factor (design capacity)
+                        # - prediction=False: max_capacity × design_load_factor × annual_load_factor
+                        #
+                        # IMPORTANT: EXCLUDES streamday_percentage (copy_0 principle)
+                        # - Streamday represents operational inefficiency (maintenance, breakdowns)
+                        # - Market capacity = technical potential with available feedstock
+                        # - NOT reduced by operational losses
+                        #
+                        # Why TRUE capacity (no spot_utilization, no streamday)?
+                        # 1. Consistent with copy_0 baseline (proven correct)
+                        # 2. Avoids circular dependency (spot_utilization depends on market price)
+                        # 3. Market clearing shows full supply curve available to market
+                        # 4. Streamday/spot_utilization applied AFTER price is determined
+                        #
+                        # Note: annual_load_factor represents feedstock availability (variable supply).
+                        # This is the maximum feedstock availability before allocation priorities.
+                        #
+                        # Example:
+                        # - True capacity = 2.5M (full capacity with feedstock, no operational losses)
+                        # - Actual production = ~1.7M (with streamday ~0.69 and demand allocation)
+                        # - Demand = 2.1M
+                        # - Market price from 2.5M vs 2.1M → Marginal SRMC (~1600) ✓
                         "production_output": (
                             site.max_capacity * site.design_load_factor
                             if prediction
-                            else site.max_capacity
-                            * site.design_load_factor
-                            * site.aggregator.annual_load_factor
-                            * site.streamday_percentage
+                            else site.max_capacity * site.design_load_factor *
+                                 site.aggregator.annual_load_factor
                         ),
+                        # CLAUDE END - MARKET PRICE FIX: Use true capacity (like copy_0)
                     }
                 )
     return operational_sites  

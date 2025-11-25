@@ -1,0 +1,85 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{enumitem}
+\usepackage{parskip}
+
+\title{\textbf{Implementation 25 November}}
+\author{SAF Market Model - Changes from copy\_0 to copy\_3}
+\date{25 November 2024}
+
+\begin{document}
+
+\maketitle
+
+\section*{Overview}
+
+This document describes the planned changes between the baseline model (copy\_0) and the extended model (copy\_3). The implementation will add two major features: a feedstock contract system with tiered pricing and a take-or-pay demand allocation system. All changes will maintain backward compatibility through configuration flags.
+
+\section{Phase 1: Feedstock Contract System}
+
+\subsection{New File: FeedstockContract.py}
+
+A new agent class will be created to manage long-term feedstock supply agreements between investors and aggregators. The contract duration will be set to 20 years with automatic renewal logic. Each contract will track the contracted capacity, tier price at signing, start and end year, and current status (active or expired). The contract will distinguish between contracted capacity (covered by long-term agreement) and spot capacity (purchased at current market price).
+
+\subsection{Feedstock\_Aggregator.py}
+
+The aggregator will implement a tiered pricing structure instead of a single fixed price per state. The tier system will divide total available feedstock into capacity bands, where each subsequent tier has a higher price. The configuration parameters tier\_capacity\_size, tier\_1\_cost, and tier\_cost\_increment will determine the tier structure. When a new contract is signed, the aggregator will allocate capacity from the lowest available tier and lock in that price for the contract duration.
+
+A two-tier allocation system will be added to handle feedstock shortages. During supply constraints, contracted capacity will receive priority allocation with its own load factor, while spot purchases will receive residual supply with a separate load factor. This will ensure that long-term commitments are honored first before spot market sales.
+
+The spot price calculation will be updated to reflect current tier pricing. As more capacity gets allocated to contracts, new entrants will face higher tier prices, creating a first-mover advantage in the market.
+
+\subsection{SAF\_Production\_Site.py}
+
+Production sites will manage both contracted and spot feedstock purchases. The site will calculate expected production separately for contracted capacity (based on contract obligations) and spot capacity (based on current market conditions). A spot utilization factor will be added that adjusts spot purchases based on price signals - when spot prices spike significantly above contract prices, the site will reduce spot purchases to minimize costs.
+
+Feedstock cost calculation will combine two components: contracted feedstock at the locked-in tier price and spot feedstock at the current market price. This will create different cost dynamics for early versus late market entrants.
+
+\subsection{Investor.py}
+
+The investment decision process will be extended to include contract signing. When an investor acquires a new production site, a feedstock contract will be automatically created with the local aggregator. The contract coverage percentage (default 80-90\% of effective capacity) will be sampled from the configured range. This contract will remain in place for 20 years and get automatically renewed at the same tier price to maintain supply continuity.
+
+\subsection{Model.py}
+
+Contract renewal logic will be added to the main simulation step. Before each production phase, the model will check all operational sites for expired contracts and create renewed contracts at the original tier price. This will prevent production disruptions while maintaining the pricing advantage of early market entry.
+
+\section{Phase 2: Take-or-Pay Mechanism}
+
+\subsection{Model.py}
+
+A demand allocation system will be implemented to handle oversupply situations. The allocate\_demand\_to\_sites method will be called before each production phase when total potential supply exceeds market demand. Sites will be prioritized first by contract coverage percentage (higher contracts get priority) and second by SRMC (lower cost wins). This will create a realistic dispatch order where contracted capacity is protected but expensive plants get curtailed first.
+
+The demand allocation can be toggled via the enable\_demand\_allocation configuration flag. When enabled, each site will receive an allocated production limit that may be below its potential capacity. When disabled, all sites will produce freely without constraints.
+
+\subsection{SAF\_Production\_Site.py}
+
+The produce method will be modified to respect demand allocation limits. The site will first calculate its potential production based on capacity and feedstock availability. If demand allocation is active, actual production will be limited to the allocated amount. The difference between potential and actual production will create curtailed volume.
+
+Take-or-pay penalties will be calculated for curtailed contracted feedstock. When a site cannot produce due to demand constraints, it will still have to pay for contracted feedstock that was not used. The penalty will equal curtailed volume times the penalty rate (default \$300/tonne). This penalty will be subtracted from EBIT and reduce plant profitability, creating financial incentive to avoid oversupply situations.
+
+The get\_contracted\_capacity and get\_spot\_capacity methods will be added to distinguish between the two feedstock types. These will support the demand allocation priority system and penalty calculations.
+
+\subsection{Investor.py}
+
+Investor-level aggregation will be added to track total curtailed volume and penalties across all owned sites. The average contract coverage percentage will also be calculated to support strategic analysis of high versus low contract coverage approaches.
+
+\section{Configuration Parameters}
+
+All new features will be controlled through config.csv parameters with backward-compatible defaults.
+
+Tier pricing parameters will control the feedstock cost structure: tier\_capacity\_size (120,000 ton/year), tier\_1\_cost (\$400/ton), tier\_cost\_increment (\$200/ton), and aggregator\_profit\_margin (\$50/ton).
+
+Contract parameters will determine coverage levels: contract\_percentage\_min (0.8) and contract\_percentage\_max (0.9), meaning sites will secure 80-90\% of capacity through long-term contracts.
+
+The take-or-pay mechanism will be controlled by enable\_demand\_allocation (True) and take\_or\_pay\_penalty\_rate (\$300/ton).
+
+\section{Data Export Changes}
+
+The logging system will be extended to capture new metrics. Production site logs will include curtailed volume and take-or-pay penalties. Investor logs will track number of contracts and average contract coverage. Aggregator logs will record contracted versus spot load factors during supply constraints.
+
+\section{Testing and Validation}
+
+Contract system validation will confirm 20-year duration and automatic renewal. Demand allocation testing will verify priority ordering and penalty calculations. Take-or-pay tests will confirm curtailed sites pay penalties while producing sites do not.
+
+\end{document}

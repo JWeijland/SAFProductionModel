@@ -326,6 +326,20 @@ def render_config_tab():
         ),
         # CLAUDE END - Phase 3 TIERED PRICING: Add tier configuration sliders
 
+        # CLAUDE START - TAKE-OR-PAY: Add penalty rate slider
+        render_slider_card(
+
+            "Take-or-Pay Contracts",
+
+            [
+
+                create_slider("take_or_pay_penalty_rate", SLIDER_CONFIG_KEYS_SINGLE["take_or_pay_penalty_rate"], title="Penalty Rate (USD/ton)"),
+
+            ],
+
+        ),
+        # CLAUDE END - TAKE-OR-PAY: Add penalty rate slider
+
     ]
 
  
