@@ -229,7 +229,7 @@ if __name__ == "__main__":
 
     register_callbacks(app)
 
-    app.run(debug=True)
+    app.run(debug=True, dev_tools_hot_reload=False)
 
 else:
 
