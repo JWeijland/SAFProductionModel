@@ -255,8 +255,6 @@ layout = html.Div(
 
         dcc.Store(id="store-graph-contract-vs-spot-prices", storage_type="session"),
 
-        dcc.Store(id="store-graph-feedstock-price-by-build-order", storage_type="session"),
-
         dcc.Store(id="store-graph-cumulative-penalties", storage_type="session"),
 
         dcc.Store(id="store-graph-tier-allocation-by-state", storage_type="session"),
@@ -609,23 +607,7 @@ layout = html.Div(
 
                                             ),
 
-                                            md=6,
-
-                                        ),
-
-                                        dbc.Col(
-
-                                            template_graph(
-
-                                                "Feedstock Price by Plant Build Order",
-
-                                                subtitle="Each bar shows the locked tier price per plant: Plant 1 gets Tier 1 ($400), Plant 2 Tier 2 ($600), etc.",
-
-                                                graph_id="graph-feedstock-price-by-build-order",
-
-                                            ),
-
-                                            md=6,
+                                            md=12,
 
                                         ),
 
