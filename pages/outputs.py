@@ -441,30 +441,6 @@ layout = html.Div(
 
                                             template_graph(
 
-                                                "Contract vs Spot Production per Plant",
-
-                                                subtitle="Shows how each plant's production splits between contracted (solid) and spot (dotted) feedstock over time",
-
-                                                graph_id="graph-contract-vs-spot-production-by-plant",
-
-                                            ),
-
-                                            md=12,
-
-                                        ),
-
-                                    ]
-
-                                ),
-
-                                dbc.Row(
-
-                                    [
-
-                                        dbc.Col(
-
-                                            template_graph(
-
                                                 "Investor KPIs",
 
                                                 graph_id="investor-kpis-graph",
