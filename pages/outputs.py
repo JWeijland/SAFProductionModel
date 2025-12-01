@@ -255,6 +255,8 @@ layout = html.Div(
 
         dcc.Store(id="store-graph-contract-vs-spot-prices", storage_type="session"),
 
+        dcc.Store(id="store-graph-contract-vs-spot-prices-by-aggregator", storage_type="session"),
+
         dcc.Store(id="store-graph-feedstock-price-by-build-order", storage_type="session"),
 
         dcc.Store(id="store-graph-npv-by-entry-year", storage_type="session"),
@@ -268,6 +270,8 @@ layout = html.Div(
         dcc.Store(id="store-graph-cumulative-penalties", storage_type="session"),
 
         dcc.Store(id="store-graph-contract-renewals", storage_type="session"),
+
+        dcc.Store(id="store-graph-tier-allocation-by-state", storage_type="session"),
 
         # dcc.Store(id="store-fs-modal-graph", storage_type="session"),
 
@@ -415,7 +419,7 @@ layout = html.Div(
 
                                             template_graph(
 
-                                                "Production by Investor vs Demand",
+                                                "Production per Plant vs Demand",
 
                                                 graph_id="graph-production-by-investor-vs-demand",
 
@@ -436,6 +440,30 @@ layout = html.Div(
                                             ),
 
                                             md=6,
+
+                                        ),
+
+                                    ]
+
+                                ),
+
+                                dbc.Row(
+
+                                    [
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "Contract vs Spot Production per Plant",
+
+                                                subtitle="Shows how each plant's production splits between contracted (solid) and spot (dotted) feedstock over time",
+
+                                                graph_id="graph-contract-vs-spot-production-by-plant",
+
+                                            ),
+
+                                            md=12,
 
                                         ),
 
@@ -617,6 +645,30 @@ layout = html.Div(
 
                                 ),
 
+                                dbc.Row(
+
+                                    [
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "Contract vs Spot Prices per Aggregator",
+
+                                                subtitle="Contract and spot prices over time for each state/aggregator. Solid lines = contract prices, dotted lines = spot prices",
+
+                                                graph_id="graph-contract-vs-spot-prices-by-aggregator",
+
+                                            ),
+
+                                            md=12,
+
+                                        ),
+
+                                    ]
+
+                                ),
+
 
 
                                 # Section 2: Strategic Investment Analysis
@@ -764,7 +816,45 @@ layout = html.Div(
                                 ),
 
 
-                                # Section 5: KPI Comparison Table
+                                # Section 5: Tier Allocation Across States
+
+                                html.Hr(className="my-4"),
+
+                                html.H4("Tier Allocation & Competitive Dynamics", className="mb-3", style={"color": "#0c72b6"}),
+
+                                html.P(
+                                    "Track how feedstock tier capacity is allocated across states over time. Shows which states fill first (lowest tier prices attract early investment) and tier progression.",
+                                    style={"marginBottom": "20px", "fontSize": "14px", "color": "#666"}
+                                ),
+
+                                dbc.Row(
+
+                                    [
+
+                                        dbc.Col(
+
+                                            template_graph(
+
+                                                "Cumulative Tier Allocation by State",
+
+                                                subtitle="Shows capacity allocation evolution: states with lowest tiers fill first (early-mover advantage)",
+
+                                                graph_id="graph-tier-allocation-by-state",
+
+                                                height=450,
+
+                                            ),
+
+                                            md=12,
+
+                                        ),
+
+                                    ]
+
+                                ),
+
+
+                                # Section 6: KPI Comparison Table
 
                                 html.Hr(className="my-4"),
 
