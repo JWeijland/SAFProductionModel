@@ -1892,27 +1892,32 @@ def register_callbacks(app: dash.Dash) -> None:
 
     )
 
-    def plot_production_by_investor_vs_demand(investor_data, run_info):
+    def plot_production_by_investor_vs_demand(site_data, run_info):
 
         # Return an empty figure if there is no data yet
 
-        if not investor_data:
+        if not site_data:
 
             return go.Figure()
 
- 
 
-        df = pd.DataFrame(investor_data)
 
- 
+        df = pd.DataFrame(site_data)
+
+
 
         df["Year"] = pd.to_numeric(df["Year"], errors="coerce").astype("Int64")
 
         df["Production_Output"] = pd.to_numeric(df["Production_Output"], errors="coerce").fillna(0.0)
 
-        df["Investor_ID"] = df["Investor_ID"].fillna("Unknown")
 
- 
+        # Check if Unique_ID exists for plant identification
+        if "Unique_ID" not in df.columns:
+            df["Unique_ID"] = "Unknown"
+        else:
+            df["Unique_ID"] = df["Unique_ID"].fillna("Unknown")
+
+
 
         # If SAF_Demand exists, coerce it so we can optionally plot it
 
@@ -1922,7 +1927,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
             df["SAF_Demand"] = pd.to_numeric(df["SAF_Demand"], errors="coerce")
 
- 
+
 
         # Drop rows without a valid year
 
@@ -1930,27 +1935,27 @@ def register_callbacks(app: dash.Dash) -> None:
 
         df["Year"] = df["Year"].astype(int)
 
- 
 
-        # --- Aggregate production: Year × Investor_ID ---
+
+        # --- Aggregate production: Year × Unique_ID (Plant) ---
 
         prod = (
 
-            df.groupby(["Year", "Investor_ID"], as_index=False)["Production_Output"]
+            df.groupby(["Year", "Unique_ID"], as_index=False)["Production_Output"]
 
             .sum()
 
-            .sort_values(["Year", "Investor_ID"])
+            .sort_values(["Year", "Unique_ID"])
 
         )
 
- 
 
-        # Order investors by total production across all years for a stable legend/stack order
 
-        investor_order = (
+        # Order plants by total production across all years for a stable legend/stack order
 
-            prod.groupby("Investor_ID")["Production_Output"]
+        plant_order = (
+
+            prod.groupby("Unique_ID")["Production_Output"]
 
             .sum()
 
@@ -1960,7 +1965,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
         )
 
- 
+
 
         # --- Build stacked bars ---
 
@@ -1972,11 +1977,11 @@ def register_callbacks(app: dash.Dash) -> None:
 
             y="Production_Output",
 
-            color="Investor_ID",
+            color="Unique_ID",
 
             barmode="stack",
 
-            category_orders={"Investor_ID": investor_order},
+            category_orders={"Unique_ID": plant_order},
 
             labels={
 
@@ -1984,13 +1989,13 @@ def register_callbacks(app: dash.Dash) -> None:
 
                 "Production_Output": "Production Output",
 
-                "Investor_ID": "Investor"
+                "Unique_ID": "Plant"
 
             },
 
         )
 
- 
+
 
         # --- Optional: overlay annual demand as a line (same y-axis, same units) ---
 
@@ -2010,7 +2015,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
             )
 
- 
+
 
             if not demand.empty:
 
@@ -2030,15 +2035,15 @@ def register_callbacks(app: dash.Dash) -> None:
 
                 )
 
- 
+
 
         # --- Aesthetics ---
 
         fig.update_layout(
 
-            title="SAF Production by Investor (Stacked) vs Demand",
+            title="SAF Production per Plant (Stacked) vs Demand",
 
-            legend_title="Investor",
+            legend_title="Plant",
 
             bargap=0.15,
 
@@ -2064,7 +2069,7 @@ def register_callbacks(app: dash.Dash) -> None:
             run_name = run_info.get("run_name", "Unknown")
             display_date = run_info.get("display_date", "")
             fig.update_layout(
-                title=f"Production by Investor vs Demand<br><sub>Run: {run_name} | {display_date}</sub>"
+                title=f"Production per Plant vs Demand<br><sub>Run: {run_name} | {display_date}</sub>"
             )
 
 
@@ -2225,14 +2230,16 @@ def register_callbacks(app: dash.Dash) -> None:
                 title=dict(text="Curtailed Volume (tonnes)", font=dict(color="#1f77b4")),
                 tickfont=dict(color="#1f77b4", size=10),
                 tickformat=",",
-                side="left"
+                side="left",
+                rangemode="tozero"
             ),
             yaxis2=dict(
                 title=dict(text="Total Penalty Cost (USD)", font=dict(color="red")),
                 tickfont=dict(color="red", size=10),
                 tickformat="$,.0f",
                 overlaying="y",
-                side="right"
+                side="right",
+                rangemode="tozero"
             ),
             barmode="stack",
             legend=dict(
@@ -2263,6 +2270,152 @@ def register_callbacks(app: dash.Dash) -> None:
             )
 
         return fig
+
+    @app.callback(
+        Output("graph-contract-vs-spot-production-by-plant", "figure"),
+        Input("store-saf-production-site", "data"),
+        Input("store-current-run-info", "data"),
+    )
+    def plot_contract_vs_spot_production_by_plant(site_data, run_info):
+        """
+        Contract vs Spot Production Volume per Plant Over Time
+        Shows stacked area chart for each plant's contracted and spot production
+        """
+        if not site_data:
+            return go.Figure()
+
+        try:
+            df = pd.DataFrame(site_data)
+
+            # Check if required columns exist
+            if "Contracted_Production" not in df.columns or "Spot_Production" not in df.columns:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="Contract vs Spot production data not available",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=14)
+                )
+                fig.update_layout(title="Contract vs Spot Production per Plant")
+                return fig
+
+            # Convert to numeric
+            if "Year" in df.columns:
+                df["Year"] = pd.to_numeric(df["Year"], errors="coerce").astype("Int64")
+            else:
+                return go.Figure()
+
+            df["Contracted_Production"] = pd.to_numeric(df["Contracted_Production"], errors="coerce").fillna(0.0)
+            df["Spot_Production"] = pd.to_numeric(df["Spot_Production"], errors="coerce").fillna(0.0)
+
+            if "Unique_ID" not in df.columns:
+                df["Unique_ID"] = "Unknown"
+            else:
+                df["Unique_ID"] = df["Unique_ID"].fillna("Unknown")
+
+            # Drop rows without valid year
+            df = df.dropna(subset=["Year"]).copy()
+            if len(df) == 0:
+                return go.Figure()
+            df["Year"] = df["Year"].astype(int)
+
+            # Get unique plants
+            plants = sorted(df["Unique_ID"].unique())
+
+            if len(plants) == 0:
+                return go.Figure()
+
+            fig = go.Figure()
+
+            # Color palette
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+
+            # Add traces for each plant (contracted + spot as stacked areas)
+            for i, plant in enumerate(plants):
+                plant_data = df[df["Unique_ID"] == plant].groupby("Year").agg({
+                    "Contracted_Production": "sum",
+                    "Spot_Production": "sum"
+                }).reset_index().sort_values("Year")
+
+                if plant_data.empty:
+                    continue
+
+                color = colors[i % len(colors)]
+
+                # Contracted production (bottom layer)
+                fig.add_trace(go.Scatter(
+                    x=plant_data["Year"],
+                    y=plant_data["Contracted_Production"],
+                    mode='lines',
+                    name=f"{plant} - Contracted",
+                    line=dict(width=0, color=color),
+                    fillcolor=color,
+                    fill='tozeroy',
+                    stackgroup=f'plant_{i}',
+                    legendgroup=plant,
+                    hovertemplate=f"<b>{plant} (Contracted)</b><br>Year: %{{x}}<br>Volume: %{{y:,.0f}} tonnes<extra></extra>"
+                ))
+
+                # Spot production (top layer)
+                fig.add_trace(go.Scatter(
+                    x=plant_data["Year"],
+                    y=plant_data["Spot_Production"],
+                    mode='lines',
+                    name=f"{plant} - Spot",
+                    line=dict(width=0, color=color, dash='dot'),
+                    fillcolor=f'rgba{tuple(list(int(color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4)) + [0.5])}',  # Semi-transparent
+                    fill='tonexty',
+                    stackgroup=f'plant_{i}',
+                    legendgroup=plant,
+                    hovertemplate=f"<b>{plant} (Spot)</b><br>Year: %{{x}}<br>Volume: %{{y:,.0f}} tonnes<extra></extra>"
+                ))
+
+            fig.update_layout(
+                title="Contract vs Spot Production Volume per Plant",
+                xaxis=dict(
+                    title="Year",
+                    tickmode="linear",
+                    dtick=2,
+                    tickangle=-45,
+                    tickfont=dict(size=10)
+                ),
+                yaxis=dict(
+                    title="Production Volume (tonnes)",
+                    tickformat=",",
+                    rangemode="tozero"
+                ),
+                legend=dict(
+                    title=dict(text="Plant & Type"),
+                    orientation="v",
+                    x=1.02,
+                    y=1,
+                    xanchor="left",
+                    yanchor="top",
+                    bgcolor="rgba(255,255,255,0.8)",
+                    bordercolor="rgba(0,0,0,0.2)",
+                    borderwidth=1
+                ),
+                hovermode="x unified",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=80, r=250, t=100, b=80),
+                height=500
+            )
+
+            # Add run info to title
+            if run_info:
+                run_name = run_info.get("run_name", "Unknown")
+                display_date = run_info.get("display_date", "")
+                fig.update_layout(
+                    title=f"Contract vs Spot Production Volume per Plant<br><sub>Run: {run_name} | {display_date}</sub>"
+                )
+
+            return fig
+        except Exception as e:
+            print(f"Error in plot_contract_vs_spot_production_by_plant: {e}")
+            import traceback
+            traceback.print_exc()
+            return go.Figure()
 
     # ----------------- Batch Graphs -----------------
 
@@ -4345,6 +4498,123 @@ def register_callbacks(app: dash.Dash) -> None:
             return go.Figure()
 
     @app.callback(
+        Output("graph-contract-vs-spot-prices-by-aggregator", "figure"),
+        Input("store-saf-production-site", "data"),
+        Input("store-feedstock-aggregator", "data"),
+        Input("store-current-run-info", "data"),
+    )
+    def plot_contract_vs_spot_prices_by_aggregator(site_data, aggregator_data, run_info):
+        """
+        Contract vs Spot Feedstock Prices per Aggregator
+        Shows contract and spot prices over time for each state/aggregator
+        """
+        if not site_data or not aggregator_data or not run_info:
+            return go.Figure()
+
+        try:
+            df_sites = pd.DataFrame(site_data)
+            df_agg = pd.DataFrame(aggregator_data)
+
+            # Process site data for contract prices
+            df_sites["Year"] = pd.to_numeric(df_sites["Year"], errors="coerce")
+            df_sites = df_sites.dropna(subset=["Year"])
+
+            # Process aggregator data for spot prices
+            df_agg["Year"] = pd.to_numeric(df_agg["Year"], errors="coerce")
+            df_agg = df_agg.dropna(subset=["Year"])
+
+            # Get unique states/aggregators
+            if "State_ID" not in df_agg.columns:
+                return go.Figure()
+
+            states = sorted(df_agg["State_ID"].dropna().unique())
+
+            if len(states) == 0:
+                return go.Figure()
+
+            fig = go.Figure()
+
+            # Color palette for different states
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+
+            # Add Contract Price lines (from sites with contracts) per state
+            if "Contract_Price" in df_sites.columns and "State_ID" in df_sites.columns:
+                df_sites["Contract_Price"] = pd.to_numeric(df_sites["Contract_Price"], errors="coerce")
+
+                for i, state in enumerate(states):
+                    state_contract_data = df_sites[
+                        (df_sites["State_ID"] == state) &
+                        (df_sites["Contract_Price"].notna())
+                    ].groupby("Year")["Contract_Price"].mean().reset_index()
+
+                    if not state_contract_data.empty:
+                        color = colors[i % len(colors)]
+                        fig.add_trace(go.Scatter(
+                            x=state_contract_data["Year"],
+                            y=state_contract_data["Contract_Price"],
+                            mode="lines+markers",
+                            name=f"{state} - Contract",
+                            line=dict(color=color, width=2, dash="solid"),
+                            marker=dict(size=5),
+                            legendgroup=state,
+                            hovertemplate=f"<b>{state} Contract</b><br>Year: %{{x}}<br>Price: $%{{y:.0f}}/tonne<extra></extra>"
+                        ))
+
+            # Add Spot Price lines (from aggregator) per state
+            spot_col = "State_Spot_Price" if "State_Spot_Price" in df_agg.columns else "Feedstock_Price"
+            if spot_col in df_agg.columns:
+                df_agg[spot_col] = pd.to_numeric(df_agg[spot_col], errors="coerce")
+
+                for i, state in enumerate(states):
+                    state_spot_data = df_agg[
+                        df_agg["State_ID"] == state
+                    ].groupby("Year")[spot_col].mean().reset_index()
+
+                    if not state_spot_data.empty:
+                        color = colors[i % len(colors)]
+                        fig.add_trace(go.Scatter(
+                            x=state_spot_data["Year"],
+                            y=state_spot_data[spot_col],
+                            mode="lines+markers",
+                            name=f"{state} - Spot",
+                            line=dict(color=color, width=2, dash="dot"),
+                            marker=dict(size=5, symbol="diamond"),
+                            legendgroup=state,
+                            hovertemplate=f"<b>{state} Spot</b><br>Year: %{{x}}<br>Price: $%{{y:.0f}}/tonne<extra></extra>"
+                        ))
+
+            fig.update_layout(
+                title="Contract vs Spot Feedstock Prices per Aggregator",
+                xaxis_title="Year",
+                yaxis_title="Price (USD/tonne)",
+                hovermode="x unified",
+                legend=dict(
+                    x=1.02,
+                    y=1,
+                    bgcolor="rgba(255,255,255,0.9)",
+                    bordercolor="rgba(0,0,0,0.2)",
+                    borderwidth=1
+                ),
+                template="plotly_white",
+                margin=dict(r=200),  # Extra margin for legend
+            )
+
+            # Add run info to title
+            if run_info:
+                run_name = run_info.get("run_name", "Unknown")
+                display_date = run_info.get("display_date", "")
+                fig.update_layout(
+                    title=f"Contract vs Spot Feedstock Prices per Aggregator<br><sub>Run: {run_name} | {display_date}</sub>"
+                )
+
+            return fig
+        except Exception as e:
+            print(f"Error in plot_contract_vs_spot_prices_by_aggregator: {e}")
+            import traceback
+            traceback.print_exc()
+            return go.Figure()
+
+    @app.callback(
         Output("graph-feedstock-price-by-build-order", "figure"),
         Input("store-saf-production-site", "data"),
     )
@@ -4850,290 +5120,57 @@ def register_callbacks(app: dash.Dash) -> None:
     # ========================================================================
 
     def calculate_copy3_kpis(model_data, site_data, investor_data, aggregator_data, run_info):
-        """
-        Calculate all KPIs for copy_3 model from simulation data.
-
-        Returns dict with structure:
-        {
-            "Market Structure & Pricing": {...},
-            "Investment & Entry Dynamics": {...},
-            ...
-        }
-        """
+        """Calculate simplified KPIs for copy_3 model from simulation data."""
         kpis = {}
 
         try:
             df_model = pd.DataFrame(model_data) if model_data else pd.DataFrame()
             df_sites = pd.DataFrame(site_data) if site_data else pd.DataFrame()
             df_investors = pd.DataFrame(investor_data) if investor_data else pd.DataFrame()
-            df_agg = pd.DataFrame(aggregator_data) if aggregator_data else pd.DataFrame()
 
             # Clean data
-            for df in [df_model, df_sites, df_investors, df_agg]:
+            for df in [df_model, df_sites, df_investors]:
                 if "Year" in df.columns:
                     df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
                     df.dropna(subset=["Year"], inplace=True)
 
-            # ==================== CATEGORY 1: Market Structure & Pricing ====================
-            kpis["Market Structure & Pricing"] = {}
+            # Market Metrics
+            kpis["Market Metrics"] = {}
 
-            # Average SAF Market Price
             if "Market_Price" in df_model.columns:
                 df_model["Market_Price"] = pd.to_numeric(df_model["Market_Price"], errors="coerce")
                 avg_price = df_model["Market_Price"].mean()
-                kpis["Market Structure & Pricing"]["Average SAF Market Price"] = {
-                    "value": avg_price,
-                    "unit": "USD/ton"
-                }
+                kpis["Market Metrics"]["Average SAF Market Price"] = {"value": avg_price, "unit": "USD/ton"}
 
-            # Price Volatility
-            if "Market_Price" in df_model.columns:
-                price_std = df_model["Market_Price"].std()
-                kpis["Market Structure & Pricing"]["Price Volatility (Std Dev)"] = {
-                    "value": price_std,
-                    "unit": "USD/ton"
-                }
-
-            # Feedstock Price Range
-            if "State_Spot_Price" in df_agg.columns:
-                df_agg["State_Spot_Price"] = pd.to_numeric(df_agg["State_Spot_Price"], errors="coerce")
-                min_price = df_agg["State_Spot_Price"].min()
-                max_price = df_agg["State_Spot_Price"].max()
-                kpis["Market Structure & Pricing"]["Feedstock Price Range"] = {
-                    "value": f"${min_price:.0f} - ${max_price:.0f}",
-                    "unit": "USD/ton"
-                }
-
-            # Contract vs Spot Price Gap
-            if "Contract_Price" in df_sites.columns and "State_Spot_Price" in df_sites.columns:
-                df_sites["Contract_Price"] = pd.to_numeric(df_sites["Contract_Price"], errors="coerce")
-                df_sites["State_Spot_Price"] = pd.to_numeric(df_sites["State_Spot_Price"], errors="coerce")
-
-                contract_avg = df_sites[df_sites["Contract_Price"].notna()]["Contract_Price"].mean()
-                spot_avg = df_sites["State_Spot_Price"].mean()
-                gap = abs(contract_avg - spot_avg)
-
-                kpis["Market Structure & Pricing"]["Contract vs Spot Price Gap"] = {
-                    "value": gap,
-                    "unit": "USD/ton"
-                }
-
-            # Market Concentration (simplified - count investors)
-            if "Investor_ID" in df_sites.columns:
-                unique_investors = df_sites["Investor_ID"].nunique()
-                kpis["Market Structure & Pricing"]["Number of Active Investors"] = {
-                    "value": unique_investors,
-                    "unit": "count"
-                }
-
-            # ==================== CATEGORY 2: Investment & Entry Dynamics ====================
-            kpis["Investment & Entry Dynamics"] = {}
-
-            # Total Plants Built
             if "Unique_ID" in df_sites.columns:
                 total_plants = df_sites["Unique_ID"].nunique()
-                kpis["Investment & Entry Dynamics"]["Total Plants Built"] = {
-                    "value": total_plants,
-                    "unit": "count"
-                }
+                kpis["Market Metrics"]["Total Plants Built"] = {"value": total_plants, "unit": "count"}
 
-            # Average Entry Year
-            if "Year" in df_sites.columns and "Unique_ID" in df_sites.columns:
-                first_appearance = df_sites.groupby("Unique_ID")["Year"].min()
-                avg_entry = first_appearance.mean()
-                kpis["Investment & Entry Dynamics"]["Average Entry Year"] = {
-                    "value": avg_entry,
-                    "unit": "year"
-                }
+            # Financial Metrics
+            kpis["Financial Metrics"] = {}
 
-            # Investment Wave Pattern (early/mid/late split)
-            if "Year" in df_sites.columns and "Unique_ID" in df_sites.columns:
-                first_appearance = df_sites.groupby("Unique_ID")["Year"].min()
-                min_year = first_appearance.min()
-                max_year = first_appearance.max()
-
-                if max_year > min_year:
-                    third = (max_year - min_year) / 3
-                    early = ((first_appearance <= min_year + third).sum())
-                    mid = ((first_appearance > min_year + third) & (first_appearance <= min_year + 2*third)).sum()
-                    late = ((first_appearance > min_year + 2*third).sum())
-
-                    kpis["Investment & Entry Dynamics"]["Investment Wave Pattern"] = {
-                        "value": f"Early: {early}, Mid: {mid}, Late: {late}",
-                        "unit": "count"
-                    }
-
-            # Time to Market Saturation
-            if "Year" in df_sites.columns and "Unique_ID" in df_sites.columns:
-                first_appearance = df_sites.groupby("Unique_ID")["Year"].min()
-                saturation_time = first_appearance.max() - first_appearance.min()
-                kpis["Investment & Entry Dynamics"]["Time to Market Saturation"] = {
-                    "value": saturation_time,
-                    "unit": "years"
-                }
-
-            # Early Mover Advantage (Tier 1 vs Tier 3 SRMC diff)
-            if "Initial_Contract_Price" in df_sites.columns and "Unique_ID" in df_sites.columns:
-                df_sites["Initial_Contract_Price"] = pd.to_numeric(df_sites["Initial_Contract_Price"], errors="coerce")
-
-                # Get first contract price per plant
-                first_prices = df_sites[df_sites["Initial_Contract_Price"].notna()].groupby("Unique_ID")["Initial_Contract_Price"].first()
-
-                if len(first_prices) >= 3:
-                    tier1_price = first_prices.nsmallest(1).iloc[0]  # Lowest price
-                    tier3_price = first_prices.nsmallest(3).iloc[-1]  # 3rd lowest
-                    advantage = tier3_price - tier1_price
-
-                    kpis["Investment & Entry Dynamics"]["Early Mover Advantage (Tier Price Diff)"] = {
-                        "value": advantage,
-                        "unit": "USD/ton"
-                    }
-
-            # ==================== CATEGORY 3: Financial Performance ====================
-            kpis["Financial Performance"] = {}
-
-            # Average ROACE
             if "ROACE" in df_investors.columns:
                 df_investors["ROACE"] = pd.to_numeric(df_investors["ROACE"], errors="coerce")
-                avg_roace = df_investors["ROACE"].mean() * 100  # Convert to percentage
-                kpis["Financial Performance"]["Average ROACE"] = {
-                    "value": avg_roace,
-                    "unit": "%"
-                }
+                avg_roace = df_investors["ROACE"].mean() * 100
+                kpis["Financial Metrics"]["Average ROACE"] = {"value": avg_roace, "unit": "%"}
 
-            # NPV Distribution (P10/P50/P90)
-            if "NPV" in df_sites.columns:
-                df_sites["NPV"] = pd.to_numeric(df_sites["NPV"], errors="coerce")
-                npv_data = df_sites[df_sites["NPV"].notna()]["NPV"]
-
-                if len(npv_data) > 0:
-                    p10 = npv_data.quantile(0.10) / 1e6  # Convert to millions
-                    p50 = npv_data.quantile(0.50) / 1e6
-                    p90 = npv_data.quantile(0.90) / 1e6
-
-                    kpis["Financial Performance"]["NPV Distribution (P10/P50/P90)"] = {
-                        "value": f"${p10:.1f}M / ${p50:.1f}M / ${p90:.1f}M",
-                        "unit": "USD"
-                    }
-
-            # EBIT Volatility
             if "EBIT" in df_sites.columns:
                 df_sites["EBIT"] = pd.to_numeric(df_sites["EBIT"], errors="coerce")
-                ebit_std = df_sites["EBIT"].std() / 1e6  # Convert to millions
-                kpis["Financial Performance"]["EBIT Volatility (Std Dev)"] = {
-                    "value": ebit_std,
-                    "unit": "M USD"
-                }
+                total_profit = df_sites["EBIT"].sum() / 1e6
+                kpis["Financial Metrics"]["Total Cumulative EBIT"] = {"value": total_profit, "unit": "M USD"}
 
-            # Total Cumulative Profit
-            if "EBIT" in df_sites.columns:
-                df_sites["EBIT"] = pd.to_numeric(df_sites["EBIT"], errors="coerce")
-                total_profit = df_sites["EBIT"].sum() / 1e6  # Convert to millions
-                kpis["Financial Performance"]["Total Cumulative EBIT"] = {
-                    "value": total_profit,
-                    "unit": "M USD"
-                }
-
-            # ==================== CATEGORY 4: Operational Metrics ====================
+            # Operational Metrics
             kpis["Operational Metrics"] = {}
 
-            # Average Load Factor
-            if "Annual_Load_Factor" in df_agg.columns:
-                df_agg["Annual_Load_Factor"] = pd.to_numeric(df_agg["Annual_Load_Factor"], errors="coerce")
-                avg_lf = df_agg["Annual_Load_Factor"].mean() * 100
-                kpis["Operational Metrics"]["Average Load Factor"] = {
-                    "value": avg_lf,
-                    "unit": "%"
-                }
+            if "Annual_Load_Factor" in df_sites.columns:
+                df_sites["Annual_Load_Factor"] = pd.to_numeric(df_sites["Annual_Load_Factor"], errors="coerce")
+                avg_lf = df_sites["Annual_Load_Factor"].mean() * 100
+                kpis["Operational Metrics"]["Average Load Factor"] = {"value": avg_lf, "unit": "%"}
 
-            # Supply Reliability (% years demand met)
-            if "Total_Supply" in df_model.columns and "Demand" in df_model.columns:
-                df_model["Total_Supply"] = pd.to_numeric(df_model["Total_Supply"], errors="coerce")
-                df_model["Demand"] = pd.to_numeric(df_model["Demand"], errors="coerce")
-
-                years_met = (df_model["Total_Supply"] >= df_model["Demand"]).sum()
-                total_years = len(df_model)
-                reliability = (years_met / total_years * 100) if total_years > 0 else 0
-
-                kpis["Operational Metrics"]["Supply Reliability (% Years Demand Met)"] = {
-                    "value": reliability,
-                    "unit": "%"
-                }
-
-            # Total SAF Production
             if "Production_Output" in df_sites.columns:
                 df_sites["Production_Output"] = pd.to_numeric(df_sites["Production_Output"], errors="coerce")
-                total_production = df_sites["Production_Output"].sum() / 1e6  # Convert to millions
-                kpis["Operational Metrics"]["Total SAF Production (Cumulative)"] = {
-                    "value": total_production,
-                    "unit": "M tons"
-                }
-
-            # ==================== CATEGORY 5: Contract & Risk Metrics ====================
-            kpis["Contract & Risk Metrics"] = {}
-
-            # Average Contract Coverage
-            if "Initial_Contract_Price" in df_sites.columns:
-                # Plants with contracts
-                has_contract = df_sites["Initial_Contract_Price"].notna()
-                contract_coverage = has_contract.sum() / len(df_sites) * 100 if len(df_sites) > 0 else 0
-
-                kpis["Contract & Risk Metrics"]["Average Contract Coverage"] = {
-                    "value": contract_coverage,
-                    "unit": "%"
-                }
-
-            # Total Take-or-Pay Penalties
-            if "Take_Or_Pay_Penalty" in df_sites.columns:
-                df_sites["Take_Or_Pay_Penalty"] = pd.to_numeric(df_sites["Take_Or_Pay_Penalty"], errors="coerce")
-                total_penalties = df_sites["Take_Or_Pay_Penalty"].sum() / 1e6  # Convert to millions
-                kpis["Contract & Risk Metrics"]["Total Take-or-Pay Penalties"] = {
-                    "value": total_penalties,
-                    "unit": "M USD"
-                }
-
-            # Curtailed Volume
-            if "Curtailed_Volume" in df_sites.columns and "Production_Output" in df_sites.columns:
-                df_sites["Curtailed_Volume"] = pd.to_numeric(df_sites["Curtailed_Volume"], errors="coerce")
-                df_sites["Production_Output"] = pd.to_numeric(df_sites["Production_Output"], errors="coerce")
-
-                total_curtailed = df_sites["Curtailed_Volume"].sum()
-                total_capacity = df_sites["Production_Output"].sum() + total_curtailed
-                curtailed_pct = (total_curtailed / total_capacity * 100) if total_capacity > 0 else 0
-
-                kpis["Contract & Risk Metrics"]["Curtailed Volume (% of Capacity)"] = {
-                    "value": curtailed_pct,
-                    "unit": "%"
-                }
-
-            # ==================== CATEGORY 6: Market Efficiency ====================
-            kpis["Market Efficiency"] = {}
-
-            # Supply-Demand Balance
-            if "Total_Supply" in df_model.columns and "Demand" in df_model.columns:
-                df_model["Total_Supply"] = pd.to_numeric(df_model["Total_Supply"], errors="coerce")
-                df_model["Demand"] = pd.to_numeric(df_model["Demand"], errors="coerce")
-
-                df_model["Balance"] = (df_model["Total_Supply"] - df_model["Demand"]) / df_model["Demand"] * 100
-                avg_balance = df_model["Balance"].mean()
-
-                kpis["Market Efficiency"]["Supply-Demand Balance (Avg Surplus/Deficit)"] = {
-                    "value": avg_balance,
-                    "unit": "%"
-                }
-
-            # Stranded Assets
-            if "EBIT" in df_sites.columns and "Unique_ID" in df_sites.columns:
-                df_sites["EBIT"] = pd.to_numeric(df_sites["EBIT"], errors="coerce")
-
-                # Calculate average EBIT per plant
-                avg_ebit_per_plant = df_sites.groupby("Unique_ID")["EBIT"].mean()
-                stranded = (avg_ebit_per_plant < 0).sum()
-
-                kpis["Market Efficiency"]["Stranded Assets (Plants with Negative Avg EBIT)"] = {
-                    "value": stranded,
-                    "unit": "count"
-                }
+                total_production = df_sites["Production_Output"].sum() / 1e6
+                kpis["Operational Metrics"]["Total SAF Production"] = {"value": total_production, "unit": "M tons"}
 
         except Exception as e:
             print(f"Error calculating KPIs: {e}")
@@ -5144,7 +5181,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
     @app.callback(
         Output("kpi-comparison-table", "children"),
-        Input("store-model-vars", "data"),
+        Input("store-model", "data"),
         Input("store-saf-production-site", "data"),
         Input("store-investor", "data"),
         Input("store-feedstock-aggregator", "data"),
@@ -5162,41 +5199,19 @@ def register_callbacks(app: dash.Dash) -> None:
         # Calculate copy_3 KPIs from data
         copy3_kpis = calculate_copy3_kpis(model_data, site_data, investor_data, aggregator_data, run_info)
 
-        # Hardcoded copy_0 baseline values (placeholders - to be filled)
+        # Hardcoded copy_0 baseline values (to be filled with actual data)
         copy0_kpis = {
-            "Market Structure & Pricing": {
-                "Average SAF Market Price": {"value": 1450, "unit": "USD/ton"},
-                "Price Volatility (Std Dev)": {"value": 180, "unit": "USD/ton"},
-                "Feedstock Price Range": {"value": "$450 - $450", "unit": "USD/ton"},
-                "Contract vs Spot Price Gap": {"value": 0, "unit": "USD/ton"},
-                "Number of Active Investors": {"value": 0, "unit": "count"},
-            },
-            "Investment & Entry Dynamics": {
+            "Market Metrics": {
+                "Average SAF Market Price": {"value": 0, "unit": "USD/ton"},
                 "Total Plants Built": {"value": 0, "unit": "count"},
-                "Average Entry Year": {"value": 0, "unit": "year"},
-                "Investment Wave Pattern": {"value": "N/A", "unit": "count"},
-                "Time to Market Saturation": {"value": 0, "unit": "years"},
-                "Early Mover Advantage (Tier Price Diff)": {"value": 0, "unit": "USD/ton"},
             },
-            "Financial Performance": {
+            "Financial Metrics": {
                 "Average ROACE": {"value": 0, "unit": "%"},
-                "NPV Distribution (P10/P50/P90)": {"value": "N/A", "unit": "USD"},
-                "EBIT Volatility (Std Dev)": {"value": 0, "unit": "M USD"},
                 "Total Cumulative EBIT": {"value": 0, "unit": "M USD"},
             },
             "Operational Metrics": {
                 "Average Load Factor": {"value": 0, "unit": "%"},
-                "Supply Reliability (% Years Demand Met)": {"value": 0, "unit": "%"},
-                "Total SAF Production (Cumulative)": {"value": 0, "unit": "M tons"},
-            },
-            "Contract & Risk Metrics": {
-                "Average Contract Coverage": {"value": 0, "unit": "%"},
-                "Total Take-or-Pay Penalties": {"value": 0, "unit": "M USD"},
-                "Curtailed Volume (% of Capacity)": {"value": 0, "unit": "%"},
-            },
-            "Market Efficiency": {
-                "Supply-Demand Balance (Avg Surplus/Deficit)": {"value": 0, "unit": "%"},
-                "Stranded Assets (Plants with Negative Avg EBIT)": {"value": 0, "unit": "count"},
+                "Total SAF Production": {"value": 0, "unit": "M tons"},
             },
         }
 
@@ -5277,19 +5292,146 @@ def register_callbacks(app: dash.Dash) -> None:
             html.Tbody(table_sections)
         ], bordered=True, hover=True, responsive=True, striped=False, style={"fontSize": "13px"})
 
-        return html.Div([
-            html.H4("KPI Comparison: Baseline vs Advanced Model", style={"marginBottom": "20px", "color": "#0c72b6"}),
-            html.P([
-                "copy_0 = Baseline model (uniform feedstock pricing, no contracts). ",
-                html.Span("Values are placeholders - fill with actual copy_0 results.", style={"fontStyle": "italic", "color": "#666"})
-            ], style={"marginBottom": "20px", "fontSize": "14px"}),
-            table
-        ])
+        return table
 
 
 
 
 
 
+
+
+
+
+
+    # CLAUDE - Tier Allocation by State Graph
+    @app.callback(
+        Output("graph-tier-allocation-by-state", "figure"),
+        Input("store-feedstock-aggregator", "data"),
+        Input("store-current-run-info", "data"),
+    )
+    def plot_tier_allocation_by_state(aggregator_data, run_info):
+        """
+        Stacked area chart showing cumulative tier allocation across all states over time.
+
+        This graph demonstrates:
+        - Which states fill first (early mover advantage - lowest tier prices)
+        - Tier progression as market matures
+        - Competitive dynamics between states for feedstock capacity
+        """
+        if not aggregator_data or not run_info:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available. Run a simulation first.",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="gray")
+            )
+            fig.update_layout(title="Cumulative Tier Allocation by State")
+            return fig
+
+        df = pd.DataFrame(aggregator_data)
+
+        if df.empty:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="Aggregator data not available in this run.",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="gray")
+            )
+            fig.update_layout(title="Cumulative Tier Allocation by State")
+            return fig
+
+        # Filter for aggregator agents only
+        if "Agent_Type" in df.columns:
+            df = df[df["Agent_Type"] == "FeedstockAggregator"]
+
+        # Check if we have the required columns
+        required_cols = ["Year", "State_ID", "Cumulative_Allocated"]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            fig = go.Figure()
+            fig.add_annotation(
+                text=f"Missing required columns: {', '.join(missing_cols)}",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="gray")
+            )
+            fig.update_layout(title="Cumulative Tier Allocation by State")
+            return fig
+
+        # Filter out rows with missing data
+        tier_df = df[df["Cumulative_Allocated"].notna() & (df["Cumulative_Allocated"] > 0)].copy()
+
+        if tier_df.empty:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No tier allocation data found (all states have zero allocation).",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="gray")
+            )
+            fig.update_layout(title="Cumulative Tier Allocation by State")
+            return fig
+
+        # Create stacked area chart
+        fig = go.Figure()
+
+        # Get unique states sorted by total allocation (most allocated first in legend)
+        state_totals = tier_df.groupby("State_ID")["Cumulative_Allocated"].max().sort_values(ascending=False)
+        
+        # Color palette
+        colors = [
+            "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+            "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
+        ]
+        
+        for idx, state in enumerate(state_totals.index):
+            state_data = tier_df[tier_df["State_ID"] == state].sort_values("Year")
+
+            fig.add_trace(go.Scatter(
+                x=state_data["Year"],
+                y=state_data["Cumulative_Allocated"],
+                name=state,
+                mode="lines",
+                stackgroup="one",
+                fillcolor=colors[idx % len(colors)],
+                line=dict(width=0.5, color=colors[idx % len(colors)]),
+                hovertemplate=(
+                    f"<b>{state}</b><br>" +
+                    "Year: %{x}<br>" +
+                    "Allocated: %{y:,.0f} ton/year<br>" +
+                    "<extra></extra>"
+                )
+            ))
+        
+        fig.update_layout(
+            title=dict(
+                text="Cumulative Tier Allocation by State Over Time",
+                font=dict(size=16, color="#0c72b6")
+            ),
+            xaxis_title="Year",
+            yaxis_title="Cumulative Allocated Capacity (ton/year)",
+            hovermode="x unified",
+            legend=dict(
+                title="State",
+                orientation="v",
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.02
+            ),
+            margin=dict(l=60, r=150, t=80, b=60),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            font=dict(family="Arial, sans-serif", size=12),
+        )
+        
+        # Add grid
+        fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor="lightgray")
+        fig.update_yaxes(showgrid=True, gridwidth=0.5, gridcolor="lightgray")
+        
+        return fig
 
 

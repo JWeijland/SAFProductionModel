@@ -255,21 +255,9 @@ layout = html.Div(
 
         dcc.Store(id="store-graph-contract-vs-spot-prices", storage_type="session"),
 
-        dcc.Store(id="store-graph-contract-vs-spot-prices-by-aggregator", storage_type="session"),
-
         dcc.Store(id="store-graph-feedstock-price-by-build-order", storage_type="session"),
 
-        dcc.Store(id="store-graph-npv-by-entry-year", storage_type="session"),
-
-        dcc.Store(id="store-graph-npv-heatmap", storage_type="session"),
-
-        dcc.Store(id="store-graph-roace-by-contract-coverage", storage_type="session"),
-
-        dcc.Store(id="store-graph-load-factors", storage_type="session"),
-
         dcc.Store(id="store-graph-cumulative-penalties", storage_type="session"),
-
-        dcc.Store(id="store-graph-contract-renewals", storage_type="session"),
 
         dcc.Store(id="store-graph-tier-allocation-by-state", storage_type="session"),
 
@@ -645,135 +633,13 @@ layout = html.Div(
 
                                 ),
 
-                                dbc.Row(
-
-                                    [
-
-                                        dbc.Col(
-
-                                            template_graph(
-
-                                                "Contract vs Spot Prices per Aggregator",
-
-                                                subtitle="Contract and spot prices over time for each state/aggregator. Solid lines = contract prices, dotted lines = spot prices",
-
-                                                graph_id="graph-contract-vs-spot-prices-by-aggregator",
-
-                                            ),
-
-                                            md=12,
-
-                                        ),
-
-                                    ]
-
-                                ),
 
 
-
-                                # Section 2: Strategic Investment Analysis
+                                # Section 2: Take-or-Pay Penalties
 
                                 html.Hr(className="my-4"),
 
-                                html.H4("Strategic Investment Analysis", className="mb-3", style={"color": "#0c72b6"}),
-
-                                dbc.Row(
-
-                                    [
-
-                                        dbc.Col(
-
-                                            template_graph(
-
-                                                "NPV by Entry Year & Contract Coverage",
-
-                                                subtitle="Early mover advantage: first-tier pricing vs late-entry penalties",
-
-                                                graph_id="graph-npv-by-entry-year",
-
-                                            ),
-
-                                            md=6,
-
-                                        ),
-
-                                        dbc.Col(
-
-                                            template_graph(
-
-                                                "NPV Heatmap: Contract % vs Entry Year",
-
-                                                subtitle="Optimization landscape: find the sweet spot for contract coverage over time",
-
-                                                graph_id="graph-npv-heatmap",
-
-                                                height=450,
-
-                                            ),
-
-                                            md=6,
-
-                                        ),
-
-                                    ]
-
-                                ),
-
-
-
-                                # Section 3: Operational Performance
-
-                                html.Hr(className="my-4"),
-
-                                html.H4("Operational Performance & Risk", className="mb-3", style={"color": "#0c72b6"}),
-
-                                dbc.Row(
-
-                                    [
-
-                                        dbc.Col(
-
-                                            template_graph(
-
-                                                "ROACE: High vs Low Contract Coverage",
-
-                                                subtitle="Risk/return trade-off: stability vs flexibility in contract strategy",
-
-                                                graph_id="graph-roace-by-contract-coverage",
-
-                                            ),
-
-                                            md=6,
-
-                                        ),
-
-                                        dbc.Col(
-
-                                            template_graph(
-
-                                                "Contracted vs Spot Load Factors",
-
-                                                subtitle="Priority allocation during feedstock shortages: contracts protected, spot curtailed",
-
-                                                graph_id="graph-load-factors",
-
-                                            ),
-
-                                            md=6,
-
-                                        ),
-
-                                    ]
-
-                                ),
-
-
-
-                                # Section 4: Take-or-Pay & Contract Lifecycle
-
-                                html.Hr(className="my-4"),
-
-                                html.H4("Take-or-Pay Penalties & Contract Lifecycle", className="mb-3", style={"color": "#0c72b6"}),
+                                html.H4("Take-or-Pay Penalties", className="mb-3", style={"color": "#0c72b6"}),
 
                                 dbc.Row(
 
@@ -791,23 +657,7 @@ layout = html.Div(
 
                                             ),
 
-                                            md=6,
-
-                                        ),
-
-                                        dbc.Col(
-
-                                            template_graph(
-
-                                                "Contract Renewal Dynamics",
-
-                                                subtitle="Contract lifecycle: initial contracts vs renewals over time",
-
-                                                graph_id="graph-contract-renewals",
-
-                                            ),
-
-                                            md=6,
+                                            md=12,
 
                                         ),
 
@@ -816,7 +666,7 @@ layout = html.Div(
                                 ),
 
 
-                                # Section 5: Tier Allocation Across States
+                                # Section 3: Tier Allocation Across States
 
                                 html.Hr(className="my-4"),
 
@@ -854,14 +704,14 @@ layout = html.Div(
                                 ),
 
 
-                                # Section 6: KPI Comparison Table
+                                # Section 4: KPI Comparison
 
                                 html.Hr(className="my-4"),
 
-                                html.H4("KPI Comparison: copy_0 vs copy_3", className="mb-3", style={"color": "#0c72b6"}),
+                                html.H4("Model Comparison: Baseline vs Advanced", className="mb-3", style={"color": "#0c72b6"}),
 
                                 html.P(
-                                    "Comprehensive side-by-side comparison of key performance indicators between the baseline model (copy_0) and the advanced model (copy_3).",
+                                    "Comparison of key metrics between baseline and advanced model.",
                                     style={"marginBottom": "20px", "fontSize": "14px", "color": "#666"}
                                 ),
 
