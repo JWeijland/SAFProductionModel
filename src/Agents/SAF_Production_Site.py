@@ -180,7 +180,7 @@ class SAFProductionSite(Agent):
 
         Sample the fraction of days the plant is operating (on average).
 
- 
+
 
         Returns:
 
@@ -188,17 +188,20 @@ class SAFProductionSite(Agent):
 
         """
 
-        streamday_min = self.model.config["streamday_min"]
+        # CLAUDE - TEST: Set to 1.0 to test if demand is met exactly
+        return 1.0
 
-        streamday_max = self.model.config["streamday_max"]
+        # streamday_min = self.model.config["streamday_min"]
 
-        multiplier = random.uniform(streamday_min, streamday_max)
+        # streamday_max = self.model.config["streamday_max"]
 
-        return multiplier
+        # multiplier = random.uniform(streamday_min, streamday_max)
+
+        # return multiplier
 
  
 
-    def calculate_srmc(self, current_year: int = None) -> float:
+    def calculate_srmc(self, current_year: int = None, use_marginal_cost: bool = False) -> float:
         """
         Compute short-run marginal cost (SRMC): Cost to produce 1 tonne of SAF.
 
@@ -209,6 +212,8 @@ class SAFProductionSite(Agent):
 
         Parameters:
             current_year: Optional calendar year for market price escalation
+            use_marginal_cost: If True, use marginal feedstock cost (for merit order).
+                             If False, use weighted average over typical volume (for contracts/NPV).
 
         Returns:
             SRMC value (float).
@@ -219,7 +224,14 @@ class SAFProductionSite(Agent):
             market_escalation_rate = float(self.model.config.get("market_escalation_rate", 0.02))
             escalation_factor = (1 + market_escalation_rate) ** years_elapsed
 
-            feedstock_price = self.aggregator.get_current_market_price(current_year)
+            # CLAUDE FIX - Use marginal cost for merit order, weighted average for contracts
+            if use_marginal_cost:
+                # Merit order: use MARGINAL cost (cost of next tonne at current tier position)
+                feedstock_price = self.aggregator.get_marginal_feedstock_price()
+            else:
+                # Contracts/NPV: use weighted average over typical volume
+                feedstock_price = self.aggregator.get_current_market_price(current_year)
+
             opex_escalated = self.opex * escalation_factor
             transport_escalated = self.transport_cost * escalation_factor
             margin_escalated = self.profit_margin * escalation_factor
@@ -252,62 +264,22 @@ class SAFProductionSite(Agent):
 
     def get_spot_utilization_factor(self) -> float:
         """
-        Decide how much of spot capacity to utilize based on price signals.
+        Decide how much of spot capacity to utilize.
 
-        SPOT CAPACITY OPTIMIZATION:
-        Plant compares spot price vs contract price and decides whether to:
-        - Use full spot capacity (100%) if spot is attractive
-        - Reduce spot usage if spot price is too high
+        SPOT UTILIZATION: DISABLED
+        Plants always use 100% of their spot capacity.
 
-        Logic:
-        - If spot_price < contract_price * 0.90 (10% discount): USE ALL spot (100%)
-        - If spot_price > contract_price * 1.10 (10% premium): USE MIN spot (0% - fully optional)
-        - Otherwise: LINEAR interpolation between 0% and 100%
+        Rationale:
+        - If there is market demand, plants should produce to meet it
+        - Spot feedstock cost is already included in SRMC for merit order
+        - Demand allocation handles oversupply situations
+        - Price optimization happens at investment stage, not production stage
 
         Returns:
-            Utilization factor between 0.0 and 1.0
+            Always returns 1.0 (100% utilization)
         """
-        # Check if we have an active contract to compare against
-        if not self.active_contract:
-            # No contract - always use all spot capacity
-            return 1.0
-
-        # Get current year
-        from src.utils import year_for_tick
-        current_year = year_for_tick(
-            int(self.model.config["start_year"]),
-            int(self.model.schedule.time)
-        )
-
-        # Get current contract price (escalated)
-        contract_price = self.active_contract.get_price_for_year(current_year)
-
-        # Get spot price for this state
-        spot_price = self.model.state_spot_prices.get(
-            self.state_id,
-            self.aggregator.feedstock_price  # Fallback
-        )
-
-        # Decision thresholds
-        attractive_threshold = contract_price * 0.90  # 10% discount
-        expensive_threshold = contract_price * 1.10   # 10% premium
-
-        # Case 1: Spot is attractive (≥10% cheaper) → Use all spot capacity
-        if spot_price <= attractive_threshold:
-            return 1.0
-
-        # Case 2: Spot is expensive (≥10% more expensive) → Use minimum spot
-        elif spot_price >= expensive_threshold:
-            return 0.0  # Fully optional - can go to 0%
-
-        # Case 3: In between → Linear interpolation
-        else:
-            # spot_price is between attractive and expensive
-            # Map linearly: attractive (1.0) → expensive (0.0)
-            price_range = expensive_threshold - attractive_threshold
-            price_diff = spot_price - attractive_threshold
-            utilization = 1.0 - 1.0 * (price_diff / price_range)
-            return utilization
+        # SPOT OPTIMIZATION DISABLED - Always use full spot capacity
+        return 1.0
 
     def calculate_production_output(self) -> float:
         """
@@ -316,8 +288,8 @@ class SAFProductionSite(Agent):
         Production splits into two components:
         1. Contracted capacity: uses contracted_load_factor (priority allocation)
         2. Spot capacity: uses spot_load_factor (residual allocation)
-           - NEW: Spot capacity usage is modulated by get_spot_utilization_factor()
-           - Plant reduces spot purchases when spot price is unfavorable
+           - Spot utilization is always 100% (optimization disabled)
+           - Plants produce to full capacity when feedstock is available
 
         Returns:
             Annual production volume (contracted + spot)
@@ -330,12 +302,11 @@ class SAFProductionSite(Agent):
             self.aggregator.contracted_load_factor * self.streamday_percentage
         )
 
-        # CLAUDE NEW - Spot Capacity Optimization
-        # Get utilization factor based on price signals
+        # Spot utilization factor (always 1.0 - optimization disabled)
         spot_utilization = self.get_spot_utilization_factor()
 
         spot_production = (
-            spot_capacity * spot_utilization *  # ← NEW: Price-responsive utilization
+            spot_capacity * spot_utilization *  # Always 1.0 (100%)
             self.design_load_factor *
             self.aggregator.spot_load_factor * self.streamday_percentage
         )
@@ -448,10 +419,30 @@ class SAFProductionSite(Agent):
             self.potential_production_output = 0.0
             self.take_or_pay_penalty = 0.0
             self.curtailed_volume = 0.0
+            self.contracted_production = 0.0
+            self.spot_production = 0.0
             return
 
-        # Calculate potential production (what we WANT to produce - capacity)
-        potential_production = self.calculate_production_output()
+        # Calculate potential production components (contracted vs spot)
+        contracted_capacity = self.get_contracted_capacity(current_year)
+        spot_capacity = self.get_spot_capacity(current_year)
+
+        # Calculate potential contracted production
+        potential_contracted = (
+            contracted_capacity * self.design_load_factor *
+            self.aggregator.contracted_load_factor * self.streamday_percentage
+        )
+
+        # Calculate potential spot production
+        spot_utilization = self.get_spot_utilization_factor()
+        potential_spot = (
+            spot_capacity * spot_utilization *
+            self.design_load_factor *
+            self.aggregator.spot_load_factor * self.streamday_percentage
+        )
+
+        # Total potential production
+        potential_production = potential_contracted + potential_spot
 
         # CLAUDE - Store potential for Total_Supply metric (graph analysis)
         self.potential_production_output = potential_production
@@ -466,6 +457,15 @@ class SAFProductionSite(Agent):
 
             # Cap production at allocated amount
             actual_production = min(potential_production, allocated_production)
+
+            # Calculate actual contracted vs spot production (proportional curtailment)
+            if potential_production > 0:
+                curtailment_ratio = actual_production / potential_production
+                self.contracted_production = potential_contracted * curtailment_ratio
+                self.spot_production = potential_spot * curtailment_ratio
+            else:
+                self.contracted_production = 0.0
+                self.spot_production = 0.0
 
             # Calculate penalty for curtailed contracted production
             self.take_or_pay_penalty = self.calculate_take_or_pay_penalty(
@@ -483,6 +483,8 @@ class SAFProductionSite(Agent):
         else:
             # No allocation (supply <= demand), produce freely
             actual_production = potential_production
+            self.contracted_production = potential_contracted
+            self.spot_production = potential_spot
             self.take_or_pay_penalty = 0.0
             self.curtailed_volume = 0.0
 
