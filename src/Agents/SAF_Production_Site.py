@@ -8,7 +8,6 @@ import logging
 
 import random
 
-# CLAUDE - TAKE-OR-PAY: Import year_for_tick for penalty calculation
 from src.utils import year_for_tick
 
 # Contract type import (avoids circular dependency)
@@ -221,9 +220,8 @@ class SAFProductionSite(Agent):
             market_escalation_rate = float(self.model.config.get("market_escalation_rate", 0.02))
             escalation_factor = (1 + market_escalation_rate) ** years_elapsed
 
-            # CLAUDE FIX - Use marginal cost for merit order, weighted average for contracts
             if use_marginal_cost:
-                # Merit order: use MARGINAL cost (cost of next tonne at current tier position)
+                # Merit order: use marginal cost (cost of next tonne at current tier position)
                 feedstock_price = self.aggregator.get_marginal_feedstock_price()
             else:
                 # Contracts/NPV: use weighted average over typical volume
@@ -360,7 +358,6 @@ class SAFProductionSite(Agent):
         # Curtailed contracted production (feedstock we must pay for but can't use)
         curtailed_contracted = max(0, contracted_production_expected - contracted_production_actual)
 
-        # CLAUDE - Store curtailed volume for graph visualization
         self.curtailed_volume = curtailed_contracted
 
         if curtailed_contracted <= 0:
@@ -401,8 +398,6 @@ class SAFProductionSite(Agent):
         - Calculates potential production based on design + realised load factors.
         - Respects demand allocation (if oversupply) to prevent overproduction.
         - Calculates take-or-pay penalty for curtailed contracted feedstock.
-
-        CLAUDE - TAKE-OR-PAY: Modified to respect demand allocation and calculate penalties.
         """
 
         self.streamday_percentage = self.sample_streamday_percentage()
@@ -440,8 +435,6 @@ class SAFProductionSite(Agent):
 
         # Total potential production
         potential_production = potential_contracted + potential_spot
-
-        # CLAUDE - Store potential for Total_Capacity metric (graph analysis)
         self.potential_production_output = potential_production
 
         # Check if demand allocation exists (oversupply situation)
@@ -485,8 +478,6 @@ class SAFProductionSite(Agent):
             self.take_or_pay_penalty = 0.0
             self.curtailed_volume = 0.0
 
-        # CLAUDE - year_production_output is ACTUAL production (respects demand allocation)
-        # This is used for revenue calculation, EBIT, etc.
         self.year_production_output = actual_production
 
  

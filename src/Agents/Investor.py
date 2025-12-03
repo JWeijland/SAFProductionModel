@@ -5,14 +5,8 @@ import numpy as np
 from collections import deque
 
 from src.Agents.SAF_Production_Site import SAFProductionSite
-
-# CLAUDE START - Import for Phase 1 contract implementation
 from src.Agents.FeedstockContract import FeedstockContract
-# CLAUDE END - Import for Phase 1 contract implementation
-
-# CLAUDE START - Import for Phase 2: year_for_tick utility
 from src.utils import year_for_tick
-# CLAUDE END - Import for Phase 2: year_for_tick utility
 
 from typing import List, Dict, Optional, Tuple, Deque, Any
 
@@ -239,10 +233,7 @@ class Investor(Agent):
         self.min_dr: float = model.config["DR_min"]
 
         self.max_dr: float = model.config["DR_max"]
-
-        # CLAUDE START - Contract tracking for Phase 1 implementation
         self.contracts: List[FeedstockContract] = []
-        # CLAUDE END - Contract tracking for Phase 1 implementation
 
 
 
@@ -444,23 +435,15 @@ class Investor(Agent):
 
         capex_schedule: List = self.capex_schedule
 
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Use current market price for NPV
-        # NPV calculation uses CURRENT MARKET PRICE (with tech improvement benefit)
-        # Contract will be signed at this price, then escalate at 3%/year CPI
         model_start_year = int(self.model.config["start_year"])
         current_year_for_npv = year_for_tick(model_start_year, current_tick)
-
-        # Get current market price (escalated at 2%/year with tech improvement)
         contract_price = site.aggregator.get_current_market_price(current_year_for_npv)
 
         npv: float = self.calculate_npv(
-
             site, production_output, srmc_no_profit, capex_schedule,
             contract_price=contract_price,
             start_year=current_year_for_npv
-
         )
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Use current market price for NPV
 
         asset = {
 
@@ -688,30 +671,21 @@ class Investor(Agent):
 
             self.model.states_available_feedstock[best_asset['state_id']] -= best_site.max_capacity * best_site.design_load_factor
 
-            # CLAUDE START - Create feedstock contract for new plant
-            # Get the aggregator for this state
             aggregator = aggregators[best_asset['state_id']]
-
-            # Get current year for contract
-            from src.utils import year_for_tick
             current_year = year_for_tick(
                 int(self.model.config["start_year"]),
                 current_tick
             )
 
-            # Create contract
             contract = self.create_contract(
                 aggregator=aggregator,
                 plant=best_site,
                 current_year=current_year
             )
 
-            # Register contract with model and aggregator
             self.model.all_contracts.append(contract)
             self.model.new_contracts_this_year.append(contract)
             aggregator.register_contract(contract)
-
-            # Link contract to site (enables priority allocation)
             best_site.active_contract = contract
 
             logger.info(
@@ -737,28 +711,11 @@ class Investor(Agent):
         capex: float,
 
         annual_load_factor: float,
-        # CLAUDE START - Phase 2: Add current_year parameter
         current_year: int = None,
-        # CLAUDE END - Phase 2: Add current_year parameter
 
     ) -> float:
 
         """
-        # CLAUDE NOTE - Phase 2 IMPLEMENTED:
-        # This method now uses blended feedstock costs (contract + spot) via get_feedstock_cost().
-        # It calculates a contract-aware SRMC that accounts for:
-        # - 80-90% contract pricing with 3% annual escalation
-        # - 10-20% spot market pricing
-        # This provides realistic feedstock cost evolution over time.
-
-        # CLAUDE NOTE - Phase 2 CONTRACT OBLIGATION FIX:
-        # Fixed critical bug where plants with contracts would stop producing when
-        # effective SRMC > market price, violating their 80-90% contractual obligation.
-        # Now enforces minimum production equal to contracted volume, even at a loss.
-        # This creates realistic scenario where plants with old, escalated contracts
-        # are forced to produce unprofitably.
-        # CLAUDE END NOTE
-
         Compute EBIT for a site in current year.
 
 
@@ -802,7 +759,6 @@ class Investor(Agent):
 
         """
 
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Escalate all EBIT cost components
         # Use blended feedstock costs (contract + spot) instead of fixed aggregator price
         if current_year is not None:
             # Calculate escalation factor for non-feedstock costs
@@ -842,20 +798,16 @@ class Investor(Agent):
             opex_escalated = site.opex
             transport_escalated = site.transport_cost
             margin_escalated = site.profit_margin
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX: Escalate all EBIT cost components
 
 
 
         full_production_volume = site.year_production_output
 
-        # CLAUDE START - Phase 2 CONTRACT OBLIGATION FIX: Check for active contract
         # Find if this plant has an active contract that enforces minimum production
         active_contract = self.get_contract_for_plant(site.site_id, current_year)
-        # CLAUDE END - Phase 2 CONTRACT OBLIGATION FIX
 
 
         if effective_srmc > market_price:
-            # CLAUDE START - Phase 2 CONTRACT OBLIGATION FIX: Enforce contract obligation
             if active_contract is not None:
                 # CONTRACT OBLIGATION: Must produce contracted volume even at loss!
                 contracted_volume = active_contract.contracted_volume
@@ -865,17 +817,13 @@ class Investor(Agent):
                 min_production = min(contracted_volume * annual_load_factor, full_production_volume)
 
                 # Calculate FORCED production at loss
-                # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Use escalated margin
                 srmc_no_profit = effective_srmc - margin_escalated
-                # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX
                 revenue = market_price * min_production
                 variable_cost = srmc_no_profit * min_production
 
                 # Idle opex on unused capacity
                 idle_capacity = full_production_volume - min_production
-                # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Use escalated opex
                 idle_cost = opex_escalated * idle_capacity
-                # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX
 
                 total_cost = variable_cost + idle_cost + capex
 
@@ -891,7 +839,6 @@ class Investor(Agent):
                 return site.ebit
             else:
                 # No contract - normal behavior: don't produce if unprofitable
-                # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Use escalated opex
                 cost = (
                     opex_escalated
                     * site.max_capacity
@@ -899,7 +846,6 @@ class Investor(Agent):
                     * annual_load_factor
                     * site.streamday_percentage
                 )
-                # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX
 
                 site.tick_production_output = 0.0
                 site.ebit = -cost
@@ -910,11 +856,8 @@ class Investor(Agent):
                 )
 
                 return -cost
-            # CLAUDE END - Phase 2 CONTRACT OBLIGATION FIX
 
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Use escalated margin
         srmc_no_profit = effective_srmc - margin_escalated
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX
 
 
 
@@ -947,15 +890,12 @@ class Investor(Agent):
         revenue = market_price * production_volume
 
 
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Use escalated opex
         cost = (srmc_no_profit * production_volume + capex) + (
 
             opex_escalated * (full_production_volume - production_volume)
 
         )
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX
 
-        # CLAUDE START - TAKE-OR-PAY: Subtract penalty from EBIT
         # If site was curtailed due to oversupply, it must pay take-or-pay penalty
         # for contracted feedstock it committed to buy but couldn't use
         take_or_pay_penalty = getattr(site, 'take_or_pay_penalty', 0.0)
@@ -965,7 +905,6 @@ class Investor(Agent):
                 f"Site {site.site_id} EBIT before penalty: ${revenue - cost:,.0f}, "
                 f"penalty: ${take_or_pay_penalty:,.0f}"
             )
-        # CLAUDE END - TAKE-OR-PAY
 
         site.ebit = revenue - cost - take_or_pay_penalty
 
@@ -1028,7 +967,6 @@ class Investor(Agent):
             self.total_capital_invested += capex
 
             if site.operational_year <= current_tick:
-                # CLAUDE START - Phase 2: Pass current_year to calculate_ebit
                 current_year = year_for_tick(
                     int(self.model.config["start_year"]),
                     current_tick
@@ -1040,7 +978,6 @@ class Investor(Agent):
                     current_year=current_year
 
                 )
-                # CLAUDE END - Phase 2: Pass current_year to calculate_ebit
 
 
 
@@ -1115,22 +1052,18 @@ class Investor(Agent):
         srmc_no_profit: float,
 
         capex_schedule: List[float],
-        # CLAUDE START - Phase 2: Add contract pricing parameters
         contract_price: float = None,
         start_year: int = None,
-        # CLAUDE END - Phase 2: Add contract pricing parameters
 
     ) -> float:
 
         """
-        # CLAUDE NOTE - Phase 2 IMPLEMENTED:
         # NPV calculation now accounts for blended feedstock costs with contract escalation.
         # When contract_price and start_year are provided, the NPV forecast includes:
         # - 85% contract pricing with 3% annual escalation for first 20 years
         # - 15% spot pricing throughout
         # - 100% spot pricing after contract expires (year 21+)
         # This provides realistic long-term cost evolution for investment decisions.
-        # CLAUDE END NOTE
 
         Calculate the net present value (NPV) of a candidate site.
 
@@ -1187,7 +1120,6 @@ class Investor(Agent):
         """
 
         npv = 0.0
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Get escalation rates from config
         # Determine if we should use contract pricing
         use_contract_pricing = (contract_price is not None and start_year is not None)
         # Get contract percentage from config (use average of min/max range)
@@ -1199,7 +1131,6 @@ class Investor(Agent):
         market_escalation_rate = float(self.model.config.get("market_escalation_rate", 0.02))  # CPI - tech
         contract_duration = int(self.model.config.get("contract_duration", 20))
         construction_time = self.model.config["saf_plant_construction_time"]
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Get escalation rates from config
 
         for t in range(1, self.investment_horizon + 1):
 
@@ -1220,7 +1151,6 @@ class Investor(Agent):
                 cost = capex_schedule[t - 1]
 
             else:
-                # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Contract vs market escalation
                 # Operational phase - calculate SRMC with differential escalation
                 if use_contract_pricing:
                     # Years since plant became operational
@@ -1246,7 +1176,6 @@ class Investor(Agent):
                         # Contract expired - use 100% spot pricing (market escalation)
                         blended_feedstock_cost = spot_forecast
 
-                    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Escalate non-feedstock costs in NPV
                     # All cost components escalate at market rate
                     escalation_factor_npv = (1 + market_escalation_rate) ** years_operational
                     opex_escalated_npv = site.opex * escalation_factor_npv
@@ -1261,12 +1190,10 @@ class Investor(Agent):
                         margin_escalated_npv
                     )
                     effective_srmc_no_profit = effective_srmc_for_npv - margin_escalated_npv
-                    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX: Escalate non-feedstock costs in NPV
                 else:
                     # Backwards compatibility: use original SRMC
                     effective_srmc_for_npv = site.srmc
                     effective_srmc_no_profit = srmc_no_profit
-                # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Contract vs market escalation
 
                 if effective_srmc_for_npv > forecasted_price:
 
@@ -1444,7 +1371,6 @@ class Investor(Agent):
 
         return capex_total_cost * (1 - decrease)
 
-    # CLAUDE START - Contract methods for Phase 1 implementation
     def create_contract(
         self,
         aggregator,
@@ -1630,7 +1556,6 @@ class Investor(Agent):
             >>> if contract:
             ...     print(f"Plant has {contract.contract_percentage:.0%} coverage")
         """
-        # CLAUDE START - Phase 2 CONTRACT OBLIGATION FIX: Helper method
         contract = next(
             (c for c in self.contracts
              if c.plant_id == plant_id
@@ -1638,8 +1563,6 @@ class Investor(Agent):
             None
         )
         return contract
-        # CLAUDE END - Phase 2 CONTRACT OBLIGATION FIX: Helper method
-    # CLAUDE END - Contract methods for Phase 1 implementation
 
 
 

@@ -2084,7 +2084,6 @@ def register_callbacks(app: dash.Dash) -> None:
 
 
 
-    # CLAUDE - Take-or-Pay Curtailed Volume & Penalty Graph
     @app.callback(
         Output("graph-curtailed-volume-by-investor", "figure"),
         Input("store-saf-production-site", "data"),
@@ -5304,7 +5303,6 @@ def register_callbacks(app: dash.Dash) -> None:
 
 
 
-    # CLAUDE - Tier Allocation by State Graph
     @app.callback(
         Output("graph-tier-allocation-by-state", "figure"),
         Input("store-feedstock-aggregator", "data"),

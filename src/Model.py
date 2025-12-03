@@ -1,13 +1,10 @@
-from pyexpat import model
 from mesa import Model
 from mesa.datacollection import DataCollector
 from mesa.time import RandomActivation
 from src.Agents.Feedstock_Aggregator import FeedstockAggregator
 from src.Agents.SAF_Production_Site import SAFProductionSite
 from src.Agents.Investor import Investor
-# CLAUDE START - Import for Phase 1 contract implementation
 from src.Agents.FeedstockContract import FeedstockContract
-# CLAUDE END - Import for Phase 1 contract implementation
 import random
 from src.utils import (
     calculate_consumer_price,
@@ -15,9 +12,7 @@ from src.utils import (
     find_operational_sites,
     get_saf_demand_forecast,
     year_for_tick,
-    # CLAUDE START - Import contract pricing functions
     calculate_state_spot_price,
-    # CLAUDE END - Import contract pricing functions
 )
 import logging
 import os
@@ -88,25 +83,15 @@ class SAFMarketModel(Model):
                 "Consumer_Price": lambda m: getattr(m, "market_price", None),
                 "Market_Price": lambda m: getattr(m, "market_price", None),
                 "Demand": lambda m: getattr(m, "demand", None),
-                # CLAUDE - MARKET PRICE FIX: Total_Capacity shows TRUE capacity (like copy_0)
-                # This is the maximum production capability considering feedstock availability
-                # Formula: max_capacity × design_load_factor × annual_load_factor
-                #
-                # NOTE: EXCLUDES streamday_percentage (following copy_0 principle)
-                # Streamday represents operational inefficiency (maintenance, breakdowns), not capacity constraint.
-                # Market capacity should reflect what's technically possible with available feedstock,
-                # not what's achieved with operational losses.
-                #
-                # This is used for "Capacity vs Demand" graph and market price calculation.
-                # Actual production (with streamday) is ~30% lower and tracked in Actual_Production metric.
+                # Total capacity: max_capacity × design_load_factor × annual_load_factor
+                # Excludes streamday_percentage (operational inefficiency) to show true capacity
                 "Total_Capacity": lambda m: sum(
                     (site.max_capacity * site.design_load_factor *
                      site.aggregator.annual_load_factor)
                     for site in getattr(m, "production_sites", [])
                     if site.operational_year <= m.schedule.time
                 ),
-                # CLAUDE - TAKE-OR-PAY: Actual_Production shows REALIZED production (respects demand allocation)
-                # This is always <= demand when allocation is enabled
+                # Actual production respects demand allocation (always <= demand when allocation enabled)
                 "Actual_Production": lambda m: sum(
                     (
                         site.year_production_output.get(m.schedule.time, 0.0)
@@ -119,7 +104,6 @@ class SAFMarketModel(Model):
                 "Num_Production_Sites": lambda m: len(
                     getattr(m, "production_sites", [])
                 ),
-                # CLAUDE START - Contract metrics for Phase 1 implementation
                 "Num_Active_Contracts": lambda m: len([
                     c for c in getattr(m, "all_contracts", [])
                     if c.is_active(year_for_tick(
@@ -135,7 +119,6 @@ class SAFMarketModel(Model):
                         int(m.schedule.time)
                     ))
                 ),
-                # CLAUDE END - Contract metrics for Phase 1 implementation
             },
             agent_reporters={
                 # Prefer agent.current_tick; fall back to agent.tick or scheduler time
@@ -173,7 +156,6 @@ class SAFMarketModel(Model):
                     if hasattr(a, "year_production_output")
                     else getattr(a, "tick_production_output", None)
                 ),
-                # CLAUDE - Contract vs Spot production tracking
                 "Contracted_Production": lambda a: (
                     getattr(a, "contracted_production", 0.0)
                     if hasattr(a, "contracted_production")
@@ -184,7 +166,6 @@ class SAFMarketModel(Model):
                     if hasattr(a, "spot_production")
                     else 0.0
                 ),
-                # CLAUDE - Take-or-Pay metrics for curtailment visualization
                 "Curtailed_Volume": lambda a: (
                     getattr(a, "curtailed_volume", 0.0)
                     if hasattr(a, "curtailed_volume")
@@ -252,7 +233,6 @@ class SAFMarketModel(Model):
                 "Max_Supply": lambda a: (
                     getattr(a, "max_supply", None) if hasattr(a, "max_supply") else None
                 ),
-                # CLAUDE - Tier allocation tracking
                 "Cumulative_Allocated": lambda a: (
                     getattr(a, "cumulative_allocated", None) if hasattr(a, "cumulative_allocated") else None
                 ),
@@ -261,8 +241,6 @@ class SAFMarketModel(Model):
                     if hasattr(a, "num_owned_assets")
                     else 0
                 ),
-                # CLAUDE START - Contract metrics for agents (Phase 1 implementation)
-                # For FeedstockAggregator agents
                 "State_Spot_Price": lambda a: (
                     a.model.state_spot_prices.get(a.state_id)
                     if hasattr(a, "state_id")
@@ -277,7 +255,6 @@ class SAFMarketModel(Model):
                     if hasattr(a, "get_contracted_capacity")
                     else None
                 ),
-                # Contract price for SAF Production Sites
                 "Contract_Price": lambda a: (
                     a.active_contract.get_price_for_year(year_for_tick(
                         int(a.model.config["start_year"]),
@@ -291,7 +268,6 @@ class SAFMarketModel(Model):
                     if hasattr(a, "active_contract") and a.active_contract is not None
                     else None
                 ),
-                # For Investor agents
                 "Num_Contracts": lambda a: (
                     len(getattr(a, "contracts", []))
                     if hasattr(a, "contracts")
@@ -302,7 +278,6 @@ class SAFMarketModel(Model):
                     if hasattr(a, "contracts") and len(a.contracts) > 0
                     else None
                 ),
-                # CLAUDE END - Contract metrics for agents (Phase 1 implementation)
             },
         )
  
@@ -508,7 +483,6 @@ class SAFMarketModel(Model):
                 f"Initial spot price for {state_id}: "
                 f"${self.state_spot_prices[state_id]:.2f}/tonne"
             )
-        # CLAUDE END - Create contracts for initial sites
 
         # Collect initial snapshot at tick 0
         self.datacollector.collect(self)
@@ -535,20 +509,16 @@ class SAFMarketModel(Model):
             - May add new investors and/or sites to the scheduler and model state.
             - Appends records to the DataCollector.
         """
-        # CLAUDE START - Clear contracts from previous year
         self.new_contracts_this_year = []
-        # CLAUDE END - Clear contracts from previous year
 
- 
-        # CLAUDE FIX - Sample current supply FIRST before calculating available feedstock
-        # This ensures available_feedstock and current_supply have the same baseline
+        # Sample current supply before calculating available feedstock
         for aggregator in self.aggregators.values():
             current, _ = aggregator.sample_current_supply()
             aggregator.current_supply = current
 
-        # Now calculate available feedstock FROM current_supply (not max_supply!)
+        # Calculate available feedstock from current supply
         self.states_available_feedstock = {
-            state_id: aggregator.current_supply  # ← Use CURRENT supply, not max!
+            state_id: aggregator.current_supply
             for state_id, aggregator in self.aggregators.items()
         }
 
@@ -588,15 +558,11 @@ class SAFMarketModel(Model):
         for agent in self.schedule.agents:
             agent.update_supply()
 
-        # CLAUDE START - Contract Renewal: Automatically renew expired contracts BEFORE production
-        # IMPORTANT: This must happen BEFORE produce() to avoid production gap in renewal year
-        # Check all operational sites and renew contracts that have expired
+        # Automatically renew expired contracts before production
         current_year = year_for_tick(self.config["start_year"], self.schedule.time)
 
         for site in self.production_sites:
-            # Only check sites that are operational
             if site.operational_year <= self.schedule.time:
-                # Check if site has a contract that has expired
                 if site.active_contract and not site.active_contract.is_active(current_year):
                     # Find the investor that owns this site
                     investor = None
@@ -606,48 +572,37 @@ class SAFMarketModel(Model):
                             break
 
                     if investor:
-                        # Get the aggregator for this site's state
                         aggregator = self.aggregators[site.state_id]
 
-                        # Create a new contract to replace the expired one
                         logger.info(
                             f"Contract expired for {site.site_id}. "
                             f"Creating renewal contract in year {current_year}"
                         )
 
-                        # Use renewal method to maintain same tier pricing
                         old_contract = site.active_contract
                         renewal_price = aggregator.renew_contract_at_same_tier(
                             existing_contract=old_contract,
                             current_year=current_year
                         )
 
-                        # Create new contract with same terms (NO tier escalation)
                         new_contract = FeedstockContract(
                             contract_id=f"contract_{site.site_id}_renewal_{current_year}",
                             investor_id=site.investor_id,
                             aggregator_id=site.state_id,
                             plant_id=site.site_id,
-                            initial_contract_price=renewal_price,  # Same tier price
+                            initial_contract_price=renewal_price,
                             start_year=current_year,
                             end_year=current_year + old_contract.duration,
                             duration=old_contract.duration,
                             annual_capacity=old_contract.annual_capacity,
                             contract_percentage=old_contract.contract_percentage,
-                            escalation_rate=0.0,  # No escalation in tier system
+                            escalation_rate=0.0,
                             status="active"
                         )
 
-                        # Add to investor's contracts
                         investor.contracts.append(new_contract)
-
-                        # Assign the new contract to the site
                         site.active_contract = new_contract
-
-                        # Register contract with aggregator
                         aggregator.register_contract(new_contract)
-
-                        # Track for spot price calculation
                         self.new_contracts_this_year.append(new_contract)
 
                         logger.info(
@@ -660,11 +615,8 @@ class SAFMarketModel(Model):
                             f"Could not find investor {site.investor_id} "
                             f"to renew contract for {site.site_id}"
                         )
-        # CLAUDE END - Contract Renewal: Automatically renew expired contracts BEFORE production
 
-        # CLAUDE START - TAKE-OR-PAY: Allocate demand before production
-        # When market has oversupply, we must allocate limited demand across sites.
-        # This prevents overproduction and triggers take-or-pay penalties for curtailed contracts.
+        # Allocate demand before production (when oversupply occurs)
         current_year = year_for_tick(self.config["start_year"], self.schedule.time)
         total_demand = get_saf_demand_forecast(
             current_year,
@@ -672,7 +624,6 @@ class SAFMarketModel(Model):
             self.atf_demand_forecast
         )
 
-        # Check if feature is enabled
         if self.config.get('enable_demand_allocation', True):
             self.demand_allocation = self.allocate_demand_to_sites(
                 self.production_sites,
@@ -680,9 +631,7 @@ class SAFMarketModel(Model):
                 current_year
             )
         else:
-            # Feature disabled, no allocation (everyone produces freely)
             self.demand_allocation = None
-        # CLAUDE END - TAKE-OR-PAY: Allocate demand before production
 
         for agent in self.schedule.agents:
             agent.produce()
@@ -697,7 +646,7 @@ class SAFMarketModel(Model):
             investor.consumer_price_forecast = updated_forecast
             investor.current_tick = self.schedule.time
 
-        # CLAUDE START - Calculate spot prices for each state
+        # Calculate spot prices for each state
         current_year = year_for_tick(self.config["start_year"], self.schedule.time)
         for state_id, aggregator in self.aggregators.items():
             self.state_spot_prices[state_id] = calculate_state_spot_price(
@@ -710,7 +659,6 @@ class SAFMarketModel(Model):
                 f"State {state_id} spot price: "
                 f"${self.state_spot_prices[state_id]:.2f}/tonne"
             )
-        # CLAUDE END - Calculate spot prices for each state
 
         for agent in self.schedule.agents:
             agent.evaluate()
@@ -754,26 +702,20 @@ class SAFMarketModel(Model):
             current_year, self.config, self.atf_demand_forecast
         )
         self.demand = demand_this_tick
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Pass model for year-based SRMC calculation
         operational_sites_data = find_operational_sites(
             self.production_sites, current_tick, model=self
         )
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Pass model for year-based SRMC calculation
 
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Escalate ATF+ price with inflation
-        # ATF+ price (fossil fuel alternative) must escalate with inflation to remain economically consistent.
-        # Without escalation, SAF becomes uncompetitive after ~18 years when escalated SRMC exceeds
-        # the fixed €2000 cap, causing all production to halt.
+        # Escalate ATF+ price with inflation for economic consistency
         base_atf_plus_price = float(self.config["atf_plus_price"])
         inflation_rate = float(self.config.get("inflation_rate", 0.03))
         years_elapsed = current_year - start_year
         escalated_atf_plus_price = base_atf_plus_price * ((1 + inflation_rate) ** years_elapsed)
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Escalate ATF+ price with inflation
 
         self.market_price, self.marginal_details = calculate_consumer_price(
             operational_sites_data,
             demand_this_tick=demand_this_tick,
-            atf_plus_price=escalated_atf_plus_price,  # CLAUDE: Use escalated price
+            atf_plus_price=escalated_atf_plus_price,
         )
         for investor in self.investors:
             investor.consumer_price_forecast = [

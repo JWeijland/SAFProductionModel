@@ -1,4 +1,3 @@
-# CLAUDE START - Complete FeedstockContract module for Phase 1 implementation
 """
 FeedstockContract Data Structure
 
@@ -247,4 +246,3 @@ def create_contract_from_site(
     return contract
 
 
-# CLAUDE END - Complete FeedstockContract module for Phase 1 implementation

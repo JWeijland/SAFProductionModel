@@ -1,9 +1,8 @@
-from __future__ import annotations  # CLAUDE FIX - Enable forward references for type hints
+from __future__ import annotations
 from typing import List, Dict, TYPE_CHECKING
 import logging
 import math
 
-# CLAUDE FIX - Avoid circular import: Only import for type hints
 if TYPE_CHECKING:
     from src.Agents.SAF_Production_Site import SAFProductionSite
  
@@ -32,11 +31,9 @@ def calculate_consumer_price(
 
     We note that all site with a higher SRMC than the ATF+ price are excluded from the merit order, as well as sites with zero production output.
 
-    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: ATF+ price escalation
     # NOTE: atf_plus_price parameter now receives the ESCALATED ATF+ price for the current year.
     # The base ATF+ price (€2000 in 2024) escalates at inflation rate (3%/year) to remain
     # economically consistent with fossil fuel price evolution.
-    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: ATF+ price escalation
 
     Parameters:
         production_sites: List of dicts each containing keys:
@@ -144,34 +141,28 @@ def forecast_consumer_prices(
     current_year = int(model_start_year + current_tick)
     end_year = int(current_year + int(investment_horizon))
  
-    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Get inflation rate for ATF+ escalation
     inflation_rate = float(model.config.get("inflation_rate", 0.03))
     base_atf_plus_price = float(atf_plus_price)  # This is the base price passed in
-    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION
 
     for year in range(current_year + 1, end_year + 1):
 
         tick_for_year = year - model_start_year
 
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Pass model for escalated SRMC
         operational_sites = find_operational_sites(
             production_sites, tick_for_year, prediction=True, model=model
         )
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX
 
         demand = (
             get_saf_demand_forecast(year, model.config, demand_forecast)
         )
 
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Escalate ATF+ price for forecast year
         years_elapsed_forecast = year - int(model_start_year)
         escalated_atf_plus_price_forecast = base_atf_plus_price * ((1 + inflation_rate) ** years_elapsed_forecast)
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION
 
         price, details = calculate_consumer_price(
             operational_sites,
             demand,
-            escalated_atf_plus_price_forecast,  # CLAUDE: Use escalated price
+            escalated_atf_plus_price_forecast,
         )
         forecast.append([price, [details]])
  
@@ -188,7 +179,6 @@ def find_operational_sites(production_sites, year, prediction=False, model=None)
           * prediction=True  -> max_capacity * design_load_factor (potential production for forecasts)
           * prediction=False -> site.year_production_output (ACTUAL production for market clearing)
 
-    # CLAUDE START - Phase 2 CONTRACT OBLIGATION FIX: Merit Order Design Decision
     # Merit order now uses MARKET-ESCALATED SRMC with technological improvement.
     #
     # Key distinction:
@@ -205,29 +195,23 @@ def find_operational_sites(production_sites, year, prediction=False, model=None)
     # This creates realistic "stranded asset" dynamics where plants locked into
     # expensive long-term contracts lose competitiveness as technology improves.
     # See Investor.calculate_ebit() for contract obligation enforcement.
-    # CLAUDE END - Phase 2 CONTRACT OBLIGATION FIX: Merit Order Design Decision
 
-    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Updated parameters
     Parameters:
         production_sites: List of SAFProductionSite objects.
         year: Year (tick) to test operational status against.
         prediction: If True, ignores realised annual load factor variability.
         model: Optional model reference for getting current year (for SRMC escalation)
-    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Updated parameters
     Returns:
         List of dicts: { site_id, srmc, production_output }.
     """
     operational_sites = []
 
-    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION FIX: Calculate current calendar year correctly
     current_year = None
     if model is not None:
         # year parameter is a TICK (0, 1, 2, ...), convert to calendar year
         start_year = int(model.config["start_year"])
         current_year = start_year + int(year)
-    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION FIX: Calculate current calendar year correctly
 
-    # CLAUDE START - Phase 2 FORECAST FIX: Include plants under construction
     # CRITICAL FIX for overinvestment: Investors must see plants being built!
     #
     # Problem before: Forecasts only counted operational sites, creating 4-year blindspot
@@ -243,17 +227,13 @@ def find_operational_sites(production_sites, year, prediction=False, model=None)
     #
     # Implementation: Include sites where operational_year <= forecast_year
     # (regardless of whether they're operational NOW at current tick)
-    # CLAUDE END - Phase 2 FORECAST FIX: Include plants under construction
 
     for site in production_sites:
-        # CLAUDE START - Phase 2 FORECAST FIX: Changed condition to include under-construction sites
         # OLD: if site.operational_year <= year
         # NEW: Same condition, but year is the FORECAST year, not current year
         # This naturally includes plants under construction that become operational by forecast year
         if site.operational_year <= year:
-        # CLAUDE END - Phase 2 FORECAST FIX: Changed condition to include under-construction sites
             if not any(s["site_id"] == site.site_id for s in operational_sites):
-                # CLAUDE FIX - Use marginal cost for merit order (cost of next tonne, not weighted average)
                 # For non-prediction mode (market clearing), we want the TRUE marginal cost
                 # For prediction mode (forecasts), we keep weighted average for consistency with contracts
                 use_marginal = not prediction
@@ -266,12 +246,9 @@ def find_operational_sites(production_sites, year, prediction=False, model=None)
                 operational_sites.append(
                     {
                         "site_id": site.site_id,
-                        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION + MARGINAL COST FIX
                         # Uses MARGINAL feedstock cost for market clearing (not weighted average)
                         # This ensures market price reflects true short-run marginal cost
                         "srmc": calculated_srmc,
-                        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION + MARGINAL COST FIX
-                        # CLAUDE START - MARKET PRICE FIX: Use true capacity (like copy_0)
                         # Market price is based on TRUE capacity (max physical production capability).
                         #
                         # Following copy_0 principle:
@@ -303,7 +280,6 @@ def find_operational_sites(production_sites, year, prediction=False, model=None)
                             else site.max_capacity * site.design_load_factor *
                                  site.aggregator.annual_load_factor
                         ),
-                        # CLAUDE END - MARKET PRICE FIX: Use true capacity (like copy_0)
                     }
                 )
     return operational_sites  
@@ -364,7 +340,6 @@ def tick_for_year(start_year, year: int) -> int:
     return int(year) - int(start_year)
  
  
-# CLAUDE START - Contract pricing functions for Phase 1 implementation
 def calculate_initial_contract_price(site) -> float:
     """
     Calculate initial contract price based on site's SRMC.
@@ -489,4 +464,3 @@ def get_contract_price_for_year(
         raise ValueError(f"years_elapsed must be non-negative, got {years_elapsed}")
 
     return initial_price * ((1 + escalation_rate) ** years_elapsed)
-# CLAUDE END - Contract pricing functions for Phase 1 implementation

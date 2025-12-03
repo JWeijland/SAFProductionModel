@@ -286,7 +286,6 @@ def render_config_tab():
 
         ),
 
-        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Add price escalation sliders
         render_slider_card(
 
             "Price Escalation",
@@ -304,9 +303,7 @@ def render_config_tab():
             ],
 
         ),
-        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Add price escalation sliders
 
-        # CLAUDE START - Phase 3 TIERED PRICING: Add tier configuration sliders
         render_slider_card(
 
             "Tiered Pricing",
@@ -322,9 +319,7 @@ def render_config_tab():
             ],
 
         ),
-        # CLAUDE END - Phase 3 TIERED PRICING: Add tier configuration sliders
 
-        # CLAUDE START - TAKE-OR-PAY: Add penalty rate slider
         render_slider_card(
 
             "Take-or-Pay Contracts",
@@ -336,7 +331,6 @@ def render_config_tab():
             ],
 
         ),
-        # CLAUDE END - TAKE-OR-PAY: Add penalty rate slider
 
     ]
 

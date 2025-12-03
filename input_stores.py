@@ -34,8 +34,6 @@ SLIDER_CONFIG_KEYS_SINGLE = {
 
     "start_year": {"min": 0, "max": 4048.0, "step": 202.4, "default": 2024.0},
 
-    # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION: Add escalation rate sliders
-    # CLAUDE UPDATE: Set all defaults to 0 for baseline comparison with copy_0
     "inflation_rate": {"min": 0.0, "max": 0.10, "step": 0.001, "default": 0.0},
 
     "tech_improvement_rate": {"min": 0.0, "max": 0.05, "step": 0.001, "default": 0.0},
@@ -43,19 +41,14 @@ SLIDER_CONFIG_KEYS_SINGLE = {
     "market_escalation_rate": {"min": 0.0, "max": 0.10, "step": 0.001, "default": 0.0},
 
     "contract_escalation_rate": {"min": 0.0, "max": 0.10, "step": 0.001, "default": 0.0},
-    # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION: Add escalation rate sliders
 
-    # CLAUDE START - Phase 3 TIERED PRICING: Add tier configuration sliders
     "tier_capacity_size": {"min": 50000, "max": 500000, "step": 10000, "default": 120000},
 
     "tier_cost_increment": {"min": 50, "max": 500, "step": 50, "default": 200},
 
     "aggregator_profit_margin": {"min": 0, "max": 200, "step": 10, "default": 50},
-    # CLAUDE END - Phase 3 TIERED PRICING: Add tier configuration sliders
 
-    # CLAUDE START - TAKE-OR-PAY: Add penalty rate configuration
     "take_or_pay_penalty_rate": {"min": 0, "max": 1000, "step": 50, "default": 300}
-    # CLAUDE END - TAKE-OR-PAY: Add penalty rate configuration
 
 }
 
@@ -126,9 +119,7 @@ BOOLEAN_CONFIG_KEYS = {
 
     "capex_decrease": False,
 
-    # CLAUDE START - TAKE-OR-PAY: Enable demand allocation feature
     "enable_demand_allocation": True,
-    # CLAUDE END - TAKE-OR-PAY
 
     # Add more here as needed
 
