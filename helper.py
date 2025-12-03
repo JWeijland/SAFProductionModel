@@ -548,7 +548,7 @@ def create_slider(key, config, title=None, description=None, size="md", square=T
 
         classes.append("squareish")
 
- 
+
 
     return html.Div(
 
@@ -596,7 +596,7 @@ def create_slider(key, config, title=None, description=None, size="md", square=T
 
         ],
 
-        className=" ".join(classes),
+        className=" ".join(classes) if classes else "slider-bubble",
 
     )
 
@@ -616,7 +616,7 @@ def create_range_slider(key, config, title=None, description=None, size="md", sq
 
         classes.append("squareish")
 
- 
+
 
     return html.Div(
 
@@ -662,7 +662,7 @@ def create_range_slider(key, config, title=None, description=None, size="md", sq
 
         ],
 
-        className=" ".join(classes),
+        className=" ".join(classes) if classes else "slider-bubble",
 
     )
 
