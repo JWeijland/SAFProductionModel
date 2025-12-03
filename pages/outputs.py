@@ -335,7 +335,7 @@ layout = html.Div(
 
                                             template_graph(
 
-                                                "Supply vs Demand",
+                                                "Capacity vs Demand",
 
                                                 graph_id="graph-supply-demand",
 

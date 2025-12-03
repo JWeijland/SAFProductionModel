@@ -441,7 +441,7 @@ class SAFProductionSite(Agent):
         # Total potential production
         potential_production = potential_contracted + potential_spot
 
-        # CLAUDE - Store potential for Total_Supply metric (graph analysis)
+        # CLAUDE - Store potential for Total_Capacity metric (graph analysis)
         self.potential_production_output = potential_production
 
         # Check if demand allocation exists (oversupply situation)

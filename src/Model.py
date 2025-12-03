@@ -88,7 +88,7 @@ class SAFMarketModel(Model):
                 "Consumer_Price": lambda m: getattr(m, "market_price", None),
                 "Market_Price": lambda m: getattr(m, "market_price", None),
                 "Demand": lambda m: getattr(m, "demand", None),
-                # CLAUDE - MARKET PRICE FIX: Total_Supply shows TRUE capacity (like copy_0)
+                # CLAUDE - MARKET PRICE FIX: Total_Capacity shows TRUE capacity (like copy_0)
                 # This is the maximum production capability considering feedstock availability
                 # Formula: max_capacity × design_load_factor × annual_load_factor
                 #
@@ -97,9 +97,9 @@ class SAFMarketModel(Model):
                 # Market capacity should reflect what's technically possible with available feedstock,
                 # not what's achieved with operational losses.
                 #
-                # This is used for "Supply vs Demand" graph and market price calculation.
+                # This is used for "Capacity vs Demand" graph and market price calculation.
                 # Actual production (with streamday) is ~30% lower and tracked in Actual_Production metric.
-                "Total_Supply": lambda m: sum(
+                "Total_Capacity": lambda m: sum(
                     (site.max_capacity * site.design_load_factor *
                      site.aggregator.annual_load_factor)
                     for site in getattr(m, "production_sites", [])
@@ -940,7 +940,7 @@ class SAFMarketModel(Model):
  
         Files:
           - model_log.csv: All model-level variables per tick.
-          - market_metrics_log.csv: Subset (Tick, Consumer_Price, Demand, Total_Supply) if available.
+          - market_metrics_log.csv: Subset (Tick, Consumer_Price, Demand, Total_Capacity) if available.
           - agent_log.csv: Full agent-level panel data.
           - <agent_type>_log.csv: One file per agent type.
         """
@@ -956,7 +956,7 @@ class SAFMarketModel(Model):
  
         metrics_cols = [
             c
-            for c in ["Tick", "Year", "Consumer_Price", "Demand", "Total_Supply"]
+            for c in ["Tick", "Year", "Consumer_Price", "Demand", "Total_Capacity"]
             if c in model_df.columns
         ]
         if metrics_cols:

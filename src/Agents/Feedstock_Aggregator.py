@@ -12,6 +12,38 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("Feedstock Aggregator")
 
+# State-specific Tier 1 base costs (USD/ton)
+# Prices reflect regional feedstock availability and market conditions
+TIER_1_BASE_COSTS = {
+    # Laagste prijzen (360 USD/ton feedstock) - veel rijststro
+    "PUNJAB": 350,
+    "HARYANA": 355,
+    "CHHATTISGARH": 350,
+    "ODISHA": 355,
+
+    # Midden-lage prijzen (390 USD/ton feedstock) - mix
+    "UTTAR_PRADESH": 380,
+    "BIHAR": 375,
+    "MADHYA_PRADESH": 380,
+    "TELANGANA": 385,
+
+    # Midden prijzen (405 USD/ton feedstock)
+    "ANDHRA_PRADESH": 400,
+    "KARNATAKA": 395,
+    "WEST_BENGAL": 405,
+    "GUJARAT": 400,
+
+    # Hogere prijzen (435 USD/ton feedstock)
+    "MAHARASHTRA": 420,
+    "TAMIL_NADU": 425,
+    "JHARKHAND": 430,
+    "RAJASTHAN": 435,
+
+    # Hoogste prijzen (480 USD/ton feedstock) - kleinere/afgelegen staten
+    "ASSAM": 470,
+    "KERALA": 475,
+}
+
  
 
 class FeedstockAggregator(Agent):
@@ -151,7 +183,10 @@ class FeedstockAggregator(Agent):
         # TIERED PRICING SYSTEM - New implementation
         # Configuration for tier-based pricing (no escalation)
         self.tier_capacity_size: float = float(model.config.get("tier_capacity_size", 120_000))
-        self.tier_1_cost: float = float(model.config.get("tier_1_cost", 400))
+
+        # Get state-specific tier 1 base cost (fallback to 400 if state not found)
+        self.tier_1_cost: float = TIER_1_BASE_COSTS.get(self.state_id, 400)
+
         self.tier_cost_increment: float = float(model.config.get("tier_cost_increment", 200))
         self.aggregator_profit_margin: float = float(model.config.get("aggregator_profit_margin", 50))
         self.spot_premium: float = float(model.config.get("spot_premium", 0.10))  # 10% premium for spot purchases

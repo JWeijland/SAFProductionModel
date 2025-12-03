@@ -315,8 +315,6 @@ def render_config_tab():
 
                 create_slider("tier_capacity_size", SLIDER_CONFIG_KEYS_SINGLE["tier_capacity_size"], title="Tier Capacity Size (ton/year)"),
 
-                create_slider("tier_1_cost", SLIDER_CONFIG_KEYS_SINGLE["tier_1_cost"], title="Tier 1 Base Cost (USD/ton)"),
-
                 create_slider("tier_cost_increment", SLIDER_CONFIG_KEYS_SINGLE["tier_cost_increment"], title="Tier Cost Increment (USD/ton)"),
 
                 create_slider("aggregator_profit_margin", SLIDER_CONFIG_KEYS_SINGLE["aggregator_profit_margin"], title="Aggregator Profit Margin (USD/ton)"),
@@ -1075,7 +1073,7 @@ def _prep_runs(df):
 
     """Coerce numerics, build run (run|seed if seed exists), filter required cols."""
 
-    for c in ["Year", "Demand", "Total_Supply", "run"]:
+    for c in ["Year", "Demand", "Total_Capacity", "run"]:
 
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
@@ -1093,13 +1091,13 @@ def _prep_runs(df):
 
         )
 
-        df = df.dropna(subset=["Year", "Demand", "Total_Supply", "run", "seed"])
+        df = df.dropna(subset=["Year", "Demand", "Total_Capacity", "run", "seed"])
 
     else:
 
         df["run"] = df["run"].astype("Int64").astype(str)
 
-        df = df.dropna(subset=["Year", "Demand", "Total_Supply", "run"])
+        df = df.dropna(subset=["Year", "Demand", "Total_Capacity", "run"])
 
     return df
 
@@ -1113,7 +1111,7 @@ def _compute_feed_reliability_per_run(df):
 
     df = df.copy()
 
-    df["reliable"] = (df["Total_Supply"] > df["Demand"]).astype(float)
+    df["reliable"] = (df["Total_Capacity"] > df["Demand"]).astype(float)
 
  
 

@@ -596,7 +596,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
         x_label = "Year"
 
-        y_cols = [c for c in ["Total_Supply", "Demand"] if c in df.columns]
+        y_cols = [c for c in ["Total_Capacity", "Demand"] if c in df.columns]
 
         fig = px.line(
 
@@ -620,7 +620,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
         # Add run info to title if available
         if run_info:
-            title = f"Supply vs Demand<br><sub>Run: {run_info.get('run_name', 'Unknown')} | {run_info.get('display_date', 'Unknown date')}</sub>"
+            title = f"Capacity vs Demand<br><sub>Run: {run_info.get('run_name', 'Unknown')} | {run_info.get('display_date', 'Unknown date')}</sub>"
             fig.update_layout(title=title)
 
         return fig
@@ -2451,7 +2451,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
         # Validate required columns
 
-        required_cols = {"Year", "Total_Supply", "Demand"}
+        required_cols = {"Year", "Total_Capacity", "Demand"}
 
         if not required_cols.issubset(df.columns):
 
@@ -2463,11 +2463,11 @@ def register_callbacks(app: dash.Dash) -> None:
 
         # Ensure numerics and drop rows without needed values
 
-        for col in ["Year", "Total_Supply", "Demand"]:
+        for col in ["Year", "Total_Capacity", "Demand"]:
 
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        df = df.dropna(subset=["Year", "Total_Supply", "Demand"])
+        df = df.dropna(subset=["Year", "Total_Capacity", "Demand"])
 
  
 
@@ -2479,13 +2479,13 @@ def register_callbacks(app: dash.Dash) -> None:
 
         # Compute gap, then aggregate by Year across runs
 
-        df["Supply_Minus_Demand"] = df["Total_Supply"] - df["Demand"]
+        df["Capacity_Minus_Demand"] = df["Total_Capacity"] - df["Demand"]
 
  
 
         agg = (
 
-            df.groupby("Year")["Supply_Minus_Demand"]
+            df.groupby("Year")["Capacity_Minus_Demand"]
 
             .agg(
 
@@ -2659,11 +2659,11 @@ def register_callbacks(app: dash.Dash) -> None:
 
         # Coerce numerics and drop incomplete rows
 
-        for col in ["Year", "Total_Supply", "Demand"]:
+        for col in ["Year", "Total_Capacity", "Demand"]:
 
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        df = df.dropna(subset=["run", "Year", "Total_Supply", "Demand"])
+        df = df.dropna(subset=["run", "Year", "Total_Capacity", "Demand"])
 
  
 
@@ -2673,7 +2673,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
             df.groupby(["run", "Year"], as_index=False)
 
-            .agg(Total_Supply=("Total_Supply", "sum"),
+            .agg(Total_Capacity=("Total_Capacity", "sum"),
 
                 Demand=("Demand", "sum"))
 
@@ -2691,7 +2691,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
         def classify(row):
 
-            supply = row["Total_Supply"]
+            supply = row["Total_Capacity"]
 
             demand = row["Demand"]
 
@@ -2891,11 +2891,11 @@ def register_callbacks(app: dash.Dash) -> None:
 
         # Coerce numerics and drop incomplete rows
 
-        for col in ["Year", "Total_Supply", "Demand"]:
+        for col in ["Year", "Total_Capacity", "Demand"]:
 
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        df = df.dropna(subset=["run", "Year", "Total_Supply", "Demand"])
+        df = df.dropna(subset=["run", "Year", "Total_Capacity", "Demand"])
 
  
 
@@ -2905,7 +2905,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
             df.groupby(["run", "Year"], as_index=False)
 
-            .agg(Total_Supply=("Total_Supply", "sum"),
+            .agg(Total_Capacity=("Total_Capacity", "sum"),
 
                 Demand=("Demand", "sum"))
 
@@ -2919,7 +2919,7 @@ def register_callbacks(app: dash.Dash) -> None:
 
         def meets_90pct(row):
 
-            supply = row["Total_Supply"]
+            supply = row["Total_Capacity"]
 
             demand = row["Demand"]
 

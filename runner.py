@@ -155,7 +155,7 @@ def run_market_model_csv_batch(
     import pandas as pd
  
     keys_to_keep = {
-        "model": ["Year", "Consumer_Price","Market_Price", "Demand", "Total_Supply", "Num_Investors", "Num_Production_Sites"],
+        "model": ["Year", "Consumer_Price","Market_Price", "Demand", "Total_Capacity", "Num_Investors", "Num_Production_Sites"],
         "fa": ["Year", "AgentID", "Max_Supply", "Available_Feedstock"],
         "saf_site": ["Year", "Investor_ID", "Production_Output"],
         "investor": ["Year", "ROACE", "Num_Owned_Sites", "AgentID", "Raw_ROACE", "Optimism_Factor"],
