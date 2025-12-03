@@ -188,16 +188,13 @@ class SAFProductionSite(Agent):
 
         """
 
-        # CLAUDE - TEST: Set to 1.0 to test if demand is met exactly
-        return 1.0
+        streamday_min = self.model.config["streamday_min"]
 
-        # streamday_min = self.model.config["streamday_min"]
+        streamday_max = self.model.config["streamday_max"]
 
-        # streamday_max = self.model.config["streamday_max"]
+        multiplier = random.uniform(streamday_min, streamday_max)
 
-        # multiplier = random.uniform(streamday_min, streamday_max)
-
-        # return multiplier
+        return multiplier
 
  
 
