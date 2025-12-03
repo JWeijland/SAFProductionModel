@@ -48,8 +48,6 @@ SLIDER_CONFIG_KEYS_SINGLE = {
     # CLAUDE START - Phase 3 TIERED PRICING: Add tier configuration sliders
     "tier_capacity_size": {"min": 50000, "max": 500000, "step": 10000, "default": 120000},
 
-    "tier_1_cost": {"min": 200, "max": 800, "step": 50, "default": 400},
-
     "tier_cost_increment": {"min": 50, "max": 500, "step": 50, "default": 200},
 
     "aggregator_profit_margin": {"min": 0, "max": 200, "step": 10, "default": 50},
