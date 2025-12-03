@@ -1,9 +1,0 @@
-#!/bin/sh
-'''exec' "/Users/jelleweijland/Documents/Stage/Shell/VSCode copy_0/SAF_Market_Model_Env0/bin/python" "$0" "$@"
-' '''
-import sys
-from fontTools.subset import main
-if __name__ == '__main__':
-    if sys.argv[0].endswith('.exe'):
-        sys.argv[0] = sys.argv[0][:-4]
-    sys.exit(main())
