@@ -253,15 +253,24 @@ def find_operational_sites(production_sites, year, prediction=False, model=None)
         if site.operational_year <= year:
         # CLAUDE END - Phase 2 FORECAST FIX: Changed condition to include under-construction sites
             if not any(s["site_id"] == site.site_id for s in operational_sites):
+                # CLAUDE FIX - Use marginal cost for merit order (cost of next tonne, not weighted average)
+                # For non-prediction mode (market clearing), we want the TRUE marginal cost
+                # For prediction mode (forecasts), we keep weighted average for consistency with contracts
+                use_marginal = not prediction
+
+                calculated_srmc = site.calculate_srmc(
+                    current_year=current_year,
+                    use_marginal_cost=use_marginal
+                )
+
                 operational_sites.append(
                     {
                         "site_id": site.site_id,
-                        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION
-                        # Uses MARKET-ESCALATED SRMC (2%/year with tech improvement)
-                        # This reflects current competitive position in the market
-                        # Different from contract SRMC which escalates at 3%/year
-                        "srmc": site.calculate_srmc(current_year=current_year),
-                        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION
+                        # CLAUDE START - Phase 2 DIFFERENTIAL ESCALATION + MARGINAL COST FIX
+                        # Uses MARGINAL feedstock cost for market clearing (not weighted average)
+                        # This ensures market price reflects true short-run marginal cost
+                        "srmc": calculated_srmc,
+                        # CLAUDE END - Phase 2 DIFFERENTIAL ESCALATION + MARGINAL COST FIX
                         # CLAUDE START - MARKET PRICE FIX: Use true capacity (like copy_0)
                         # Market price is based on TRUE capacity (max physical production capability).
                         #
@@ -396,74 +405,53 @@ def calculate_state_spot_price(
     """
     Calculate annual spot price for a specific state.
 
-    The spot price is the average of all new contract prices signed in that
-    state during the current year. This creates a state-specific market price
-    that reflects local supply/demand conditions.
+    NEW MECHANISM (Tier-Based):
+    Spot price = current tier marginal cost + spot premium (10%)
+    This reflects the price for non-contracted feedstock at current market capacity.
+
+    The spot price is now directly derived from the aggregator's tier position,
+    making it simple, transparent, and tied to capacity utilization.
 
     Logic:
-    1. Filter contracts for this state from new_contracts_this_year
-    2. If contracts exist: return average of their initial prices
-    3. If no contracts: use previous_spot_price (carry forward)
-    4. If no previous price: calculate from aggregator SRMC
-    5. If no aggregator: use default_price as fallback
+    1. If aggregator exists: use aggregator.get_spot_price() (tier-based)
+    2. If no aggregator: use previous_spot_price (carry forward)
+    3. If no previous price: use default_price as fallback
 
     Parameters:
         state_id: State identifier (e.g., "PUNJAB", "MAHARASHTRA")
-        new_contracts_this_year: List of FeedstockContract objects signed this year
-        previous_spot_price: Spot price from previous year (fallback)
-        aggregator: FeedstockAggregator for this state (for SRMC calculation)
+        new_contracts_this_year: List of FeedstockContract objects signed this year (DEPRECATED - not used)
+        previous_spot_price: Spot price from previous year (fallback only)
+        aggregator: FeedstockAggregator for this state (REQUIRED for tier-based pricing)
         default_price: Final fallback price if all else fails
 
     Returns:
         Spot price for this state in USD/tonne
 
     Example:
-        >>> contracts = [
-        ...     FeedstockContract(..., aggregator_id="PUNJAB", initial_contract_price=600.0),
-        ...     FeedstockContract(..., aggregator_id="PUNJAB", initial_contract_price=620.0),
-        ...     FeedstockContract(..., aggregator_id="MAHARASHTRA", initial_contract_price=550.0)
-        ... ]
-        >>> price = calculate_state_spot_price("PUNJAB", contracts)
+        >>> aggregator = FeedstockAggregator(...)
+        >>> aggregator.cumulative_allocated = 120000  # At Tier 2 boundary
+        >>> price = calculate_state_spot_price("PUNJAB", [], aggregator=aggregator)
         >>> print(price)
-        610.0  # Average of 600 and 620
+        660.0  # Tier 2 (600) * 1.10 = 660
     """
-    # Filter contracts for this specific state
-    state_contracts = [
-        c for c in new_contracts_this_year
-        if c.aggregator_id == state_id
-    ]
-
-    # Case 1: New contracts exist - use their average
-    if state_contracts:
-        prices = [c.initial_contract_price for c in state_contracts]
-        return sum(prices) / len(prices)
-
-    # Case 2: No new contracts - use previous year's price
-    if previous_spot_price is not None:
+    # Case 1: Aggregator exists - use tier-based spot price (PREFERRED)
+    if aggregator is not None:
+        spot_price = aggregator.get_spot_price()
         logger.info(
-            f"No new contracts for {state_id}, using previous spot price: "
+            f"{state_id} spot price: ${spot_price:.2f}/tonne "
+            f"(tier-based at {aggregator.cumulative_allocated:.0f} ton/year allocated)"
+        )
+        return spot_price
+
+    # Case 2: No aggregator - use previous year's price
+    if previous_spot_price is not None:
+        logger.warning(
+            f"No aggregator for {state_id}, using previous spot price: "
             f"${previous_spot_price:.2f}/tonne"
         )
         return previous_spot_price
 
-    # Case 3: No previous price - calculate from aggregator
-    if aggregator is not None:
-        # Create a temporary site to get SRMC (includes all cost components)
-        # We can't import SAFProductionSite here due to circular imports,
-        # so we calculate SRMC components directly
-        feedstock_price = aggregator.feedstock_price
-
-        # These would come from config, but for fallback we use reasonable defaults
-        # In actual usage, aggregator should always be provided
-        estimated_srmc = feedstock_price * 1.3  # ~30% markup for opex/transport/margin
-
-        logger.info(
-            f"No contracts or previous price for {state_id}, "
-            f"using estimated SRMC: ${estimated_srmc:.2f}/tonne"
-        )
-        return estimated_srmc
-
-    # Case 4: Complete fallback
+    # Case 3: Complete fallback
     logger.warning(
         f"Cannot determine spot price for {state_id}, "
         f"using default: ${default_price:.2f}/tonne"

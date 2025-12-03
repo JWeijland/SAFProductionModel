@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(awk:*)",
+      "Bash(src/Model.py.tmp)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(source SAF_Market_Model_Env0/bin/activate)",
+      "Bash(python test_phase2.py:*)",
+      "Bash(python3:*)",
+      "Bash(python create_csv.py:*)",
+      "Bash(find:*)",
+      "Bash(python test_contract_priority_fix.py:*)",
+      "Bash(python verify_fix.py:*)",
+      "Bash(kill:*)",
+      "Bash(xargs kill:*)",
+      "Bash(jobs)",
+      "Bash(lsof:*)",
+      "Bash(python diagnose_bihar.py:*)",
+      "Bash(python test_contract_renewal.py:*)",
+      "Bash(timeout 120 python:*)",
+      "Bash(python test_feedstock_consistency.py:*)",
+      "Bash(pdflatex:*)",
+      "Bash(python -c:*)",
+      "Bash(/Users/jelleweijland/opt/anaconda3/bin/pandoc:*)",
+      "Bash(python app.py:*)",
+      "Bash(python test_tier_pricing.py:*)",
+      "Bash(git merge:*)",
+      "Bash(git checkout:*)",
+      "Bash(git reset:*)",
+      "Bash(git push:*)",
+      "Bash(git log:*)",
+      "Bash(python debug_price.py:*)",
+      "Bash(python test_market_price_fix.py:*)",
+      "Bash(chmod:*)",
+      "Bash(bash:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

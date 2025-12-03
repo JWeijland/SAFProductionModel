@@ -173,6 +173,17 @@ class SAFMarketModel(Model):
                     if hasattr(a, "year_production_output")
                     else getattr(a, "tick_production_output", None)
                 ),
+                # CLAUDE - Contract vs Spot production tracking
+                "Contracted_Production": lambda a: (
+                    getattr(a, "contracted_production", 0.0)
+                    if hasattr(a, "contracted_production")
+                    else 0.0
+                ),
+                "Spot_Production": lambda a: (
+                    getattr(a, "spot_production", 0.0)
+                    if hasattr(a, "spot_production")
+                    else 0.0
+                ),
                 # CLAUDE - Take-or-Pay metrics for curtailment visualization
                 "Curtailed_Volume": lambda a: (
                     getattr(a, "curtailed_volume", 0.0)
@@ -240,6 +251,10 @@ class SAFMarketModel(Model):
                 ),
                 "Max_Supply": lambda a: (
                     getattr(a, "max_supply", None) if hasattr(a, "max_supply") else None
+                ),
+                # CLAUDE - Tier allocation tracking
+                "Cumulative_Allocated": lambda a: (
+                    getattr(a, "cumulative_allocated", None) if hasattr(a, "cumulative_allocated") else None
                 ),
                 "Num_Owned_Sites": lambda a: (
                     getattr(a, "num_owned_assets", None)

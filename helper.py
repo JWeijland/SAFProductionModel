@@ -765,15 +765,15 @@ def template_graph(
 
     title: str,
 
-    graph_id: str | None = None,
+    graph_id = None,
 
     figure=None,
 
     dropdown=None,
 
-    subtitle: str | None = None,
+    subtitle = None,
 
-    height: int | str = 380,
+    height = 380,
 
     className: str = "",
 

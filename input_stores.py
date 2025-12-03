@@ -91,7 +91,7 @@ SLIDER_CONFIG_KEYS_RANGE = {
 
     "streamday": {
 
-        "min": 0, "max": 1, "step": 0.01, "default": [0.95, 0.98]
+        "min": 0, "max": 1, "step": 0.01, "default": [1.0, 1.0]
 
     },
 

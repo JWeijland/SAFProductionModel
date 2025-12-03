@@ -154,6 +154,7 @@ class FeedstockAggregator(Agent):
         self.tier_1_cost: float = float(model.config.get("tier_1_cost", 400))
         self.tier_cost_increment: float = float(model.config.get("tier_cost_increment", 200))
         self.aggregator_profit_margin: float = float(model.config.get("aggregator_profit_margin", 50))
+        self.spot_premium: float = float(model.config.get("spot_premium", 0.10))  # 10% premium for spot purchases
 
         # Generate tiers dynamically based on max_supply
         self.tiers: List[Dict[str, float]] = self._generate_tiers()
@@ -486,6 +487,27 @@ class FeedstockAggregator(Agent):
         """
         return self._calculate_weighted_price(spot_volume)
 
+    def get_marginal_feedstock_price(self) -> float:
+        """
+        Get MARGINAL feedstock cost - the cost of the NEXT tonne of feedstock.
+
+        This is used for merit order pricing to determine the short-run marginal cost.
+        Returns the tier price at the current cumulative_allocated position.
+
+        Returns:
+            Marginal feedstock price (USD/ton) including aggregator margin
+        """
+        # Find which tier we're currently in
+        position = self.cumulative_allocated
+
+        for tier in self.tiers:
+            if position < tier["end"]:
+                # We're in this tier - return its cost + margin
+                return tier["cost"] + self.aggregator_profit_margin
+
+        # If we're beyond all tiers (shouldn't happen), return highest tier cost
+        return self.tiers[-1]["cost"] + self.aggregator_profit_margin
+
     def get_current_market_price(self, current_year: int) -> float:
         """
         Get current market feedstock price (for backward compatibility).
@@ -505,6 +527,49 @@ class FeedstockAggregator(Agent):
         # Return price for a typical contract volume (e.g., 85,000 ton/year)
         typical_volume = 85_000
         return self._calculate_weighted_price(typical_volume)
+
+    def get_spot_price(self, current_year: int = None) -> float:
+        """
+        Get current spot market price for non-contracted feedstock.
+
+        Spot price is based on the CURRENT tier position (marginal cost) + spot premium.
+        This reflects the price buyers pay for feedstock without long-term commitment.
+
+        Logic:
+        - Get the marginal tier price at current cumulative_allocated position
+        - Add spot premium (default 10%) for no commitment risk
+
+        Args:
+            current_year: Current year (not used, kept for API compatibility)
+
+        Returns:
+            Spot market price (USD/tonne)
+
+        Example:
+            If cumulative_allocated is at Tier 2 (600 USD/tonne) with 10% premium:
+            spot_price = 600 * 1.10 = 660 USD/tonne
+        """
+        try:
+            # Get the marginal tier price (already includes aggregator margin)
+            marginal_cost = self.get_marginal_feedstock_cost()
+
+            # Add spot premium for no long-term commitment
+            spot_price = marginal_cost * (1 + self.spot_premium)
+
+            logger.debug(
+                f"State {self.state_id}: Spot price = ${marginal_cost:.0f} "
+                f"(tier) * {1+self.spot_premium:.2f} (premium) = ${spot_price:.0f}/tonne"
+            )
+
+            return spot_price
+        except Exception as e:
+            logger.error(
+                f"Error calculating spot price for {self.state_id}: {e}. "
+                f"Using fallback tier 1 cost."
+            )
+            # Fallback to tier 1 cost + margin + premium
+            fallback = (self.tier_1_cost + self.aggregator_profit_margin) * (1 + self.spot_premium)
+            return fallback
 
     def register_contract(self, contract: 'FeedstockContract') -> None:
         """Register a new feedstock contract with this aggregator."""
