@@ -89,7 +89,7 @@ SLIDER_CONFIG_KEYS_RANGE = {
 
     "streamday": {
 
-        "min": 0, "max": 1, "step": 0.01, "default": [1.0, 1.0]
+        "min": 0, "max": 1, "step": 0.01, "default": [0.95, 0.98]
 
     },
 
@@ -101,7 +101,7 @@ SLIDER_CONFIG_KEYS_RANGE = {
 
     "contract_percentage": {
 
-        "min": 0.50, "max": 1.00, "step": 0.01, "default": [0.70, 0.70]
+        "min": 0.50, "max": 1.00, "step": 0.01, "default": [0.80, 0.90]
 
     }
 

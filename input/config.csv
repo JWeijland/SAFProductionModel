@@ -38,3 +38,6 @@ tier_capacity_size,120000.0,ton/year,Capacity size for each pricing tier - deter
 tier_1_cost,400.0,USD/ton,Base cost for first tier (cheapest feedstock)
 tier_cost_increment,200.0,USD/ton,"Cost increase per tier (tier 2 = tier_1_cost + increment, tier 3 = tier_1_cost + 2*increment, etc.)"
 aggregator_profit_margin,50.0,USD/ton,Fixed profit margin added to weighted tier cost by aggregator
+contract_duration,20.0,years,Duration of feedstock supply contracts
+spot_premium,0.10,,Premium charged for spot market purchases relative to tier price
+take_or_pay_penalty_rate,300.0,USD/tonne,Penalty rate for curtailed contracted feedstock volume
