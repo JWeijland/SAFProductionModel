@@ -586,7 +586,7 @@ class FeedstockAggregator(Agent):
         """
         try:
             # Get the marginal tier price (already includes aggregator margin)
-            marginal_cost = self.get_marginal_feedstock_cost()
+            marginal_cost = self.get_marginal_feedstock_price()
 
             # Add spot premium for no long-term commitment
             spot_price = marginal_cost * (1 + self.spot_premium)
