@@ -259,22 +259,54 @@ class SAFProductionSite(Agent):
 
     def get_spot_utilization_factor(self) -> float:
         """
-        Decide how much of spot capacity to utilize.
+        Decide how much of spot capacity to utilize based on investor ROACE performance.
 
-        SPOT UTILIZATION: DISABLED
-        Plants always use 100% of their spot capacity.
+        ROACE-BASED SPOT UTILIZATION:
+        - If investor's ROACE > target: use 100% spot (maximize production)
+        - If investor's ROACE ≈ target (±2%): use 70% spot (cautious)
+        - If investor's ROACE < target-2%: use 30% spot (conservative)
 
-        Rationale:
-        - If there is market demand, plants should produce to meet it
-        - Spot feedstock cost is already included in SRMC for merit order
-        - Demand allocation handles oversupply situations
-        - Price optimization happens at investment stage, not production stage
+        IMPORTANT: Spot utilization only happens if there's demand.
+        If plant is already curtailing contracted production (due to oversupply),
+        spot utilization is forced to 0% regardless of ROACE.
 
         Returns:
-            Always returns 1.0 (100% utilization)
+            Spot utilization factor (0.0 to 1.0)
         """
-        # SPOT OPTIMIZATION DISABLED - Always use full spot capacity
-        return 1.0
+        # Get the investor who owns this plant
+        investor = None
+        for agent in self.model.schedule.agents:
+            if hasattr(agent, 'investor_id') and agent.unique_id == self.investor_id:
+                investor = agent
+                break
+
+        # Fallback: if investor not found or no ROACE data, use full spot
+        if investor is None or not hasattr(investor, 'roace') or investor.roace is None:
+            return 1.0
+
+        # Get investor's current ROACE and target
+        current_roace = investor.roace
+        target_roace = float(self.model.config.get("roace_threshold", 0.10))
+
+        # Determine spot utilization based on ROACE performance
+        roace_diff = current_roace - target_roace
+
+        if roace_diff >= 0.02:  # ROACE > target + 2%
+            # Investor performing well - maximize production
+            spot_util = 1.0
+        elif roace_diff >= -0.02:  # ROACE within ±2% of target
+            # Investor performing marginally - be cautious
+            spot_util = 0.7
+        else:  # ROACE < target - 2%
+            # Investor underperforming - minimize risk
+            spot_util = 0.3
+
+        logger.debug(
+            f"Plant {self.site_id}: Investor ROACE={current_roace:.1%}, "
+            f"Target={target_roace:.1%}, Spot utilization={spot_util:.0%}"
+        )
+
+        return spot_util
 
     def calculate_production_output(self) -> float:
         """
@@ -283,11 +315,11 @@ class SAFProductionSite(Agent):
         Production splits into two components:
         1. Contracted capacity: uses contracted_load_factor (priority allocation)
         2. Spot capacity: uses spot_load_factor (residual allocation)
-           - Spot utilization is always 100% (optimization disabled)
-           - Plants produce to full capacity when feedstock is available
+           - Spot utilization based on investor ROACE performance (30-100%)
+           - If demand curtailment occurs, spot is reduced FIRST before contract
 
         Returns:
-            Annual production volume (contracted + spot)
+            Annual production volume (contracted + spot potential)
         """
         contracted_capacity = self.get_contracted_capacity()
         spot_capacity = self.get_spot_capacity()
@@ -448,14 +480,22 @@ class SAFProductionSite(Agent):
             # Cap production at allocated amount
             actual_production = min(potential_production, allocated_production)
 
-            # Calculate actual contracted vs spot production (proportional curtailment)
-            if potential_production > 0:
-                curtailment_ratio = actual_production / potential_production
-                self.contracted_production = potential_contracted * curtailment_ratio
-                self.spot_production = potential_spot * curtailment_ratio
+            # PRIORITY CURTAILMENT: Spot gets curtailed FIRST, then contracted
+            # This avoids paying take-or-pay penalties unnecessarily
+            if actual_production >= potential_contracted:
+                # Enough allocation to cover all contracted + some/all spot
+                self.contracted_production = potential_contracted
+                self.spot_production = actual_production - potential_contracted
             else:
-                self.contracted_production = 0.0
+                # Not enough allocation even for contracted - curtail contract, zero spot
+                self.contracted_production = actual_production
                 self.spot_production = 0.0
+
+            logger.debug(
+                f"{self.site_id}: allocated={actual_production:.0f}, "
+                f"contracted={self.contracted_production:.0f}, "
+                f"spot={self.spot_production:.0f}"
+            )
 
             # Calculate penalty for curtailed contracted production
             self.take_or_pay_penalty = self.calculate_take_or_pay_penalty(
