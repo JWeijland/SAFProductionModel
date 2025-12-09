@@ -1,0 +1,999 @@
+\documentclass[10.5pt]{article}
+\usepackage{svg}
+\usepackage[english]{babel}
+\usepackage[utf8x]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage[colorlinks=true, linkcolor=linkblue, citecolor=linkblue, urlcolor=linkblue]{hyperref}
+\usepackage{makecell}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{gensymb}
+\usepackage{xcolor}
+\usepackage{changepage}
+\usepackage{empheq}
+
+% ------ FONTS ------
+\usepackage{tgpagella}
+
+\usepackage{float}
+\usepackage{titling}
+\usepackage{blindtext}
+\usepackage{titlesec}
+\usepackage[square,sort,comma,numbers]{natbib}
+\usepackage{tikz}
+\usepackage{geometry}
+\usepackage{sectsty}
+\usepackage{amsmath}
+\usepackage[version=4]{mhchem}
+\usepackage{tikzpagenodes}
+\usepackage{pdfpages}
+\usepackage{listings}
+\usepackage[capitalise]{cleveref}
+\usepackage{booktabs}
+\usepackage{multicol}
+\usepackage{color}
+\usepackage{tabulary}
+\usepackage{colortbl}
+\usepackage{eso-pic}
+\usepackage{tocloft}
+\usepackage{setspace}
+\setstretch{1.1}
+
+% Table of Contents styling
+\renewcommand{\cfttoctitlefont}{\huge\bfseries\centering}
+\renewcommand{\cftaftertoctitle}{\vskip 1em}
+
+% Color definitions
+\definecolor{linkblue}{RGB}{0, 166, 214}
+\definecolor{darkgreen}{rgb}{0.0, 0.4, 0.0}
+\definecolor{codegreen}{rgb}{0,0.5,0.1}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.67}
+\definecolor{backcolour}{rgb}{0.92,0.94,0.96}
+\definecolor{keywordcolor}{rgb}{0.8, 0.2, 0.4}
+\definecolor{titleblue}{rgb}{0.2, 0.4, 0.6}
+\definecolor{tudelftdarkblue}{RGB}{12,35,64}
+\definecolor{tudelftcyan}{RGB}{0,166,214}
+\definecolor{tudelftblue}{RGB}{0, 118, 194}
+
+\lstdefinestyle{mystyle}{
+    language=Python,
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    breaklines=true,
+    numbers=left,
+    numberstyle=\tiny,
+    stepnumber=1,
+    frame=single
+}
+
+\lstset{style=mystyle}
+
+\allsectionsfont{\color{titleblue}}
+
+\geometry{a4paper,
+        left=2.2cm,
+        right=2.2cm,
+        top=2.2cm,
+        bottom=2.2cm,
+        headheight=20pt,
+        }
+
+\setlength\parindent{0pt}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+% Title page
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+
+    \includegraphics[width=0.5\textwidth]{images/TUDelft logo}\\[1.5cm]
+
+    {\Huge\bfseries SAF Market Dynamics:\\ Tier-Based Feedstock Pricing Analysis\par}
+    \vspace{1.5cm}
+
+    {\Large Jelle Weijland\par}
+    \vspace{0.5cm}
+
+    {\large \today\par}
+
+    \vfill
+
+    {\large Internship Report\\
+    Shell\\
+    Faculty of Aerospace Engineering\par}
+
+    \vspace{1cm}
+
+    \includegraphics[width=0.35\textwidth]{images/shell logo.jpeg}
+
+    \vspace{1cm}
+\end{titlepage}
+
+% Second title page with details
+\newpage
+\thispagestyle{empty}
+\begin{center}
+    {\Huge\bfseries Internship Report\par}
+    \vspace{0.5cm}
+    {\LARGE Shell\par}
+    \vspace{1.5cm}
+
+    {\Large\bfseries SAF Market Dynamics:\\
+    Tier-Based Feedstock Pricing Analysis\par}
+    \vspace{1cm}
+
+    by
+
+    \vspace{1cm}
+
+    {\Large Jelle Weijland\par}
+    \vspace{2cm}
+
+    \begin{tabular}{ll}
+        Student Name & Jelle Weijland \\
+        Student Number & [Your Number] \\
+    \end{tabular}
+
+    \vfill
+
+    \begin{tabular}{ll}
+        Supervisor: & [Supervisor Name] \\
+        Internship Duration: & [Start Date] - [End Date] \\
+        Company: & Shell \\
+        Team: & [Team Name] \\
+        Faculty: & Faculty of Aerospace Engineering, Delft \\
+    \end{tabular}
+
+    \vspace{1cm}
+
+    \includegraphics[width=0.15\textwidth]{images/TUDelft logo}
+
+\end{center}
+
+\pagenumbering{roman}
+\newpage
+
+% Table of contents
+\setcounter{tocdepth}{2}
+{\hypersetup{linkcolor=black}
+\tableofcontents
+}
+\newpage
+
+% Set up fancy headers
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\fancyhead[L]{\includegraphics[height=0.6cm]{images/TUDelft logo}}
+\fancyhead[R]{\includegraphics[height=0.65cm]{images/shell logo.jpeg}}
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% CONTENT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Introduction}
+
+\subsection{Context}
+
+Sustainable Aviation Fuel (SAF) represents a critical technology for decarbonizing the aviation sector, which currently accounts for approximately 2-3\% of global CO2 emissions. Unlike ground transportation where electrification offers a clear pathway, aviation's energy density requirements make liquid fuels essential for the foreseeable future. SAF provides a drop-in solution compatible with existing aircraft and infrastructure while potentially reducing lifecycle emissions by up to 80\% compared to conventional jet fuel.
+
+SAF can be produced from various feedstock sources including used cooking oil (UCO), agricultural residues, forestry waste, energy crops, and municipal solid waste. The diversity of feedstocks is crucial for achieving the scale required to meet growing demand. Current production primarily relies on the HEFA (Hydroprocessed Esters and Fatty Acids) pathway using waste oils and fats, though other technologies like Fischer-Tropsch, Alcohol-to-Jet, and Power-to-Liquid are under development.
+
+Global mandates are rapidly increasing. The European Union has set ambitious targets through the ReFuelEU Aviation initiative, requiring aviation fuel suppliers to blend 2\% SAF by 2025, rising to 6\% by 2030, 20\% by 2035, and reaching 70\% by 2050. In the United States, the Sustainable Aviation Fuel Grand Challenge aims to produce 3 billion gallons of SAF annually by 2030, scaling up to 35 billion gallons by 2050. India has announced a target of 1\% SAF blending by 2027 and 5\% by 2030, while China is developing its own SAF policies with expected mandates in the coming years.
+
+Feedstock availability represents a key constraint. India, for example, has approximately 500 million tons of agricultural residue generated annually, of which around 140 million tons are surplus and available for energy purposes. The production of SAF through various pathways typically requires 1.5 to 3 tons of feedstock per ton of SAF produced, depending on the technology and feedstock type used. This conversion efficiency is critical for understanding supply chain requirements and economic viability.
+
+To meet the EU's 2030 target of 6\% SAF blending, approximately 3.8 million tons of SAF will be needed for EU aviation fuel consumption. Using a conservative conversion ratio of 2 tons of feedstock per ton of SAF, this would require approximately 7.6 million tons of suitable feedstock annually. By 2050, with the 70\% blending mandate, this demand would rise to approximately 44 million tons of SAF, requiring around 88 million tons of feedstock.
+
+These substantial feedstock requirements create a complex market dynamic between investors seeking to build SAF production facilities and feedstock aggregators who control the biomass supply. Understanding this dynamic is essential for modeling market development and investment decisions.
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Add specific examples of SAF production facilities currently in operation or under construction
+    \item Include cost comparisons between SAF and conventional jet fuel over time
+    \item Discuss the role of policy incentives (carbon credits, tax breaks) in driving SAF adoption
+    \item Add more detail on competing uses for feedstocks and their market prices
+\end{itemize}
+
+\subsection{Model Overview}
+
+This Agent-Based Model (ABM) simulates investor and feedstock aggregator behavior in the SAF market over an 80-year time horizon. The model captures how investors evaluate Net Present Value (NPV) and Return on Average Capital Employed (ROACE) to make investment decisions, negotiate feedstock contracts with aggregators, and respond to evolving market conditions.
+
+The model consists of three primary agent types: investors, feedstock aggregators, and SAF production sites. Investors make strategic decisions about market entry, capacity sizing, and operational continuation. Feedstock aggregators manage biomass supply across multiple tiers with increasing costs, representing infrastructure constraints and opportunity costs. Production sites operate plants, converting feedstock to SAF while managing operational efficiency and contract obligations.
+
+Key model features include realistic construction timelines (2-3 years for facility construction), long-term feedstock contracts (20-80 years), take-or-pay provisions that create downside risk, and dynamic market pricing that responds to supply-demand imbalances. The model simulates yearly timesteps, allowing for strategic planning while capturing long-term market evolution.
+
+The model's value lies in its ability to explore how different pricing mechanisms, contract structures, and market policies affect investment timing, capacity additions, and overall market development. By comparing simple supply-demand pricing against tier-based pricing, we can assess how market structure influences outcomes for both investors and feedstock suppliers.
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Add a diagram showing the agent interaction flow and decision-making processes
+    \item Include validation approaches - how model outputs compare to real-world SAF market data
+    \item Discuss model assumptions and their potential impact on results
+    \item Add information about how demand forecasts are generated in the model
+\end{itemize}
+
+\subsection{Research Objectives}
+
+This research addresses a fundamental question in SAF market development: how should feedstock be priced to balance efficient capacity growth with fair returns for both investors and aggregators? Traditional supply-demand pricing may not capture the realities of biomass markets, where aggregators face increasing marginal costs, infrastructure constraints, and opportunity costs from alternative feedstock uses.
+
+The specific objectives are:
+
+\begin{enumerate}
+    \item Develop and validate a tier-based pricing mechanism that reflects aggregator cost structures more accurately than simple market clearing prices
+    \item Compare market outcomes (investment timing, capacity additions, price levels, profitability) under tier-based versus traditional pricing
+    \item Analyze the impact of contract structures (duration, take-or-pay provisions) on investor decisions and market stability
+    \item Assess how key parameters (tier costs, capacity thresholds, ROACE requirements) influence market dynamics
+    \item Provide policy insights for supporting efficient SAF market development
+\end{enumerate}
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Clarify the specific research questions that each model run will address
+    \item Add a section on limitations and scope - what the model does NOT attempt to capture
+    \item Discuss stakeholder perspectives - how results inform different parties (policymakers, investors, aggregators)
+    \item Include hypotheses about expected outcomes before presenting results
+\end{itemize}
+
+\subsection{Challenges and Motivation}
+
+The basic supply-demand model for feedstock pricing assumes that aggregators are price-takers eager to sell biomass to any willing buyer. However, this assumption does not reflect reality. Feedstock aggregators have multiple alternative uses for their biomass: selling to domestic agricultural markets for fertilizer and soil amendments, supplying other bio-energy producers, or processing the feedstock themselves. This multi-market flexibility gives aggregators significant bargaining power.
+
+Moreover, serving additional SAF plants imposes real costs on aggregators:
+
+\textbf{Infrastructure constraints:} The first plants to enter a region secure the most favorable locations - closest to feedstock sources, best transportation links, and optimal logistics infrastructure. Later entrants face less favorable locations, requiring longer transportation distances, additional storage capacity, and higher logistics costs.
+
+\textbf{Capacity constraints:} Aggregators' existing collection and processing infrastructure may efficiently serve initial plants, but scaling up to serve additional plants requires capital investments in expanded collection networks, larger storage facilities, and additional processing equipment.
+
+\textbf{Opportunity costs:} As aggregators commit more volume to long-term SAF contracts, they forego flexibility to respond to price signals from other markets. If agricultural commodity prices spike, for example, contracted aggregators cannot easily redirect biomass to those higher-value uses.
+
+\textbf{Risk premiums:} Long-term supply commitments to multiple plants increase aggregators' exposure to supply-side risks including weather variability, harvest failures, competition for feedstock, and regulatory changes. Prudent aggregators will demand higher prices to compensate for this concentrated risk exposure.
+
+These factors justify a tier-based pricing mechanism where costs increase as more capacity is served. This structure better captures the economics of biomass supply and creates more realistic competitive dynamics among investors.
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Add quantitative estimates for infrastructure and logistics costs at different scales
+    \item Include case studies or analogies from other bio-feedstock markets (bioethanol, biogas, etc.)
+    \item Discuss how aggregator market power might evolve as the SAF industry matures
+    \item Add more detail on regulatory frameworks that might constrain aggregator behavior
+\end{itemize}
+
+\newpage
+\section{Methodology}
+
+\subsection{Tier Mechanism Design}
+
+The tier mechanism organizes feedstock supply into discrete capacity tiers, each characterized by a specific volume capacity and unit cost. This structure reflects the economic reality that serving additional demand becomes progressively more expensive for aggregators.
+
+In this implementation, each tier has a capacity of 120,000 tons of feedstock per year, while each SAF production plant requires 100,000 tons annually to operate at full capacity. The deliberate mismatch between tier capacity and plant demand creates interesting market dynamics as multiple plants contract with the same aggregator.
+
+\textbf{Tier Structure Example:}
+\begin{itemize}
+    \item \textbf{Tier 1:} 120,000 tons at \$500/ton (base cost reflecting existing infrastructure)
+    \item \textbf{Tier 2:} 120,000 tons at \$700/ton (+\$200 reflecting expanded collection network)
+    \item \textbf{Tier 3:} 120,000 tons at \$900/ton (+\$200 reflecting more distant sources)
+\end{itemize}
+
+\textbf{Detailed Pricing Example:}
+
+\textit{Plant 1 enters:}
+\begin{itemize}
+    \item Contracts for 100,000 tons from Tier 1 at \$500/ton
+    \item Total cost to aggregator: 100,000 × \$500 = \$50 million
+    \item Total revenue to aggregator: 100,000 × \$500 = \$50 million
+    \item Aggregator profit: \$0 (cost-recovery pricing)
+    \item Remaining Tier 1 capacity: 20,000 tons
+\end{itemize}
+
+\textit{Plant 2 enters:}
+\begin{itemize}
+    \item Requires 100,000 tons total
+    \item Can source 20,000 tons from Tier 1 (\$500/ton) and 80,000 tons from Tier 2 (\$700/ton)
+    \item Aggregator's total cost structure now:
+    \begin{itemize}
+        \item Tier 1: 120,000 tons × \$500 = \$60 million
+        \item Tier 2: 80,000 tons × \$700 = \$56 million
+        \item Total cost: \$116 million for 200,000 tons
+    \end{itemize}
+    \item To maintain zero profit, equilibrium price: \$116M / 200,000 tons = \$580/ton
+    \item Both Plant 1 and Plant 2 pay \$580/ton under the updated contract price
+    \item At \$580/ton: Total revenue = 200,000 × \$580 = \$116 million = Total cost
+\end{itemize}
+
+\textit{Plant 3 enters:}
+\begin{itemize}
+    \item Requires 100,000 tons total
+    \item Sources 40,000 tons from Tier 2 (\$700/ton) and 60,000 tons from Tier 3 (\$900/ton)
+    \item Aggregator's total cost structure:
+    \begin{itemize}
+        \item Tier 1: 120,000 × \$500 = \$60 million
+        \item Tier 2: 120,000 × \$700 = \$84 million
+        \item Tier 3: 60,000 × \$900 = \$54 million
+        \item Total cost: \$198 million for 300,000 tons
+    \end{itemize}
+    \item New equilibrium price: \$198M / 300,000 tons = \$660/ton for all plants
+\end{itemize}
+
+This mechanism creates several important dynamics:
+
+\textbf{First-mover advantage erodes over time:} Early entrants initially benefit from low prices, but these advantages diminish as new plants force price recalculations upward.
+
+\textbf{Cross-subsidization:} At equilibrium, early plants pay more than their marginal cost (subsidizing later entrants), while later plants pay less than their marginal cost (subsidized by early entrants), ensuring aggregator zero-profit.
+
+\textbf{Locked-in disadvantage:} Plants entering when higher tiers are already accessed face permanently higher average feedstock costs, affecting long-term competitive position.
+
+\textbf{Strategic timing incentives:} Investors face a trade-off between entering early (lower feedstock costs, competitive advantage) versus waiting (more market information, potentially higher SAF prices).
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Add mathematical formulation of the tier pricing equilibrium
+    \item Include sensitivity analysis on tier cost increments (\$100, \$150, \$200, \$250 per tier)
+    \item Discuss alternative pricing mechanisms (e.g., marginal cost pricing, two-part tariffs)
+    \item Add a visual diagram illustrating how tiers fill up over time
+\end{itemize}
+
+\subsection{Contract Structure}
+
+Feedstock contracts in this model are long-term, fixed-price, fixed-volume agreements that create stability for both parties while introducing strategic considerations about timing and lock-in effects.
+
+\textbf{Current Implementation:}
+\begin{itemize}
+    \item \textbf{Duration:} 20 years with automatic renewal at the same price
+    \item \textbf{Price:} Fixed at the tier-based equilibrium price at contract signing
+    \item \textbf{Volume:} Fixed at 100,000 tons per year per plant
+    \item \textbf{Renewal:} Automatic continuation at original terms
+\end{itemize}
+
+\textbf{Planned Enhancement:}
+\begin{itemize}
+    \item \textbf{Duration:} 80-year initial term (matching typical facility lifetime)
+    \item \textbf{Renegotiation:} After 80 years, contracts can be renegotiated at prevailing market rates
+    \item \textbf{Rationale:} Better aligns contract duration with asset lifetime and investment planning horizons
+\end{itemize}
+
+The long-term nature of these contracts serves multiple purposes:
+
+\textbf{Investment certainty for plants:} SAF production facilities require capital investments of \$200-500 million. Lenders require long-term feedstock price certainty to finance these projects. Without long-term contracts, investment risks would be prohibitive.
+
+\textbf{Planning certainty for aggregators:} Aggregators must invest in collection infrastructure, storage facilities, and processing equipment to serve SAF plants. These investments only make economic sense with long-term volume commitments.
+
+\textbf{Market stability:} Long-term contracts dampen volatility, preventing boom-bust cycles that could destabilize the emerging SAF industry.
+
+However, long-term contracts also create lock-in effects with important implications:
+
+\textbf{Price lock-in for plants:} Plants contracting when tier prices are low secure long-term competitive advantages, while plants contracting later face permanently higher costs.
+
+\textbf{Reduced market flexibility:} Neither party can easily respond to changing market conditions. If agricultural feedstock prices collapse, aggregators cannot easily reduce SAF contract prices. If SAF demand surges, plants cannot easily scale up without new contracts.
+
+\textbf{Renegotiation challenges:} When contracts do come up for renewal, significant information asymmetries and bargaining power imbalances may lead to contentious renegotiations.
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Add discussion of escalation clauses (inflation adjustments, cost pass-through provisions)
+    \item Include analysis of optimal contract length from investor vs. aggregator perspectives
+    \item Discuss alternative contract structures (volume flexibility options, price review mechanisms)
+    \item Add comparison to contract practices in other commodity markets (LNG, electricity)
+\end{itemize}
+
+\subsection{Take-or-Pay Mechanism}
+
+Take-or-pay provisions are standard risk-mitigation clauses in long-term commodity supply contracts. Under these provisions, buyers must pay for contracted volumes even if they do not take delivery, protecting suppliers from demand-side uncertainty.
+
+\textbf{Implementation:}
+
+When a SAF plant operates below capacity for any reason (maintenance, operational issues, economic curtailment), it still owes payment for the full contracted feedstock volume. The "curtailed volume" - feedstock contracted but not taken - generates costs without corresponding SAF production revenue.
+
+\textbf{Financial Impact Chain:}
+
+\begin{equation}
+\text{EBIT} = \text{SAF Revenue} - \text{OPEX} - \text{Feedstock Cost} - \text{Curtailment Payment}
+\end{equation}
+
+Lower EBIT directly reduces Return on Average Capital Employed:
+
+\begin{equation}
+\text{ROACE} = \frac{\text{EBIT}}{\text{Average Capital Employed}}
+\end{equation}
+
+Poor ROACE performance increases the investor's discount rate by raising the risk premium:
+
+\begin{equation}
+\text{Discount Rate} = \text{Base Rate} + f(\text{ROACE})
+\end{equation}
+
+where $f(\text{ROACE})$ is an increasing function - lower returns signal higher risk.
+
+Finally, both lower cash flows and higher discount rates reduce Net Present Value:
+
+\begin{equation}
+\text{NPV} = \sum_{t=1}^{T} \frac{\text{CF}_t}{(1 + r)^t} - \text{CAPEX}
+\end{equation}
+
+\textbf{Strategic Implications:}
+
+\textit{High utilization incentive:} Take-or-pay provisions create strong incentives to maintain high capacity utilization even when market conditions deteriorate. Plants will continue operating at low or negative margins rather than curtailing production and paying for unused feedstock.
+
+\textit{Production floor effect:} Unlike markets where supply flexibly adjusts to demand, take-or-pay contracts create a "floor" on production. Even if SAF prices fall below variable costs, plants may continue producing to avoid double costs (curtailment payments plus OPEX).
+
+\textit{Bankruptcy risk:} In sustained downturns, take-or-pay obligations can push marginal plants into financial distress. Plants with high-cost feedstock contracts face the worst outcomes, as they cannot reduce costs by curtailing purchases.
+
+\textit{Aggregator protection:} From the aggregator's perspective, take-or-pay provisions protect against demand-side shocks and ensure revenue stability for their own investments in supply infrastructure.
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Add numerical examples showing how curtailment affects NPV over a plant's lifetime
+    \item Include discussion of circumstances that trigger curtailment (low SAF prices, high OPEX, operational failures)
+    \item Analyze how take-or-pay affects plant design choices (reliability vs. capital cost tradeoffs)
+    \item Compare to force majeure provisions and other contract flexibility mechanisms
+\end{itemize}
+
+\subsection{Investor Decision Making}
+
+Investors in this model evaluate potential SAF plant investments based on financial metrics, market forecasts, and risk assessments. The decision process captures key elements of real-world capital budgeting while remaining computationally tractable.
+
+\textbf{Investment Decision Criteria:}
+
+Investors evaluate two primary metrics:
+
+\textit{Net Present Value (NPV):} The present value of expected future cash flows minus initial capital expenditure. Investors only proceed if NPV exceeds a minimum threshold (typically \$0, meaning positive value creation).
+
+\textit{Return on Average Capital Employed (ROACE):} The ratio of annual operating profit to average capital deployed. Investors require ROACE above a hurdle rate (e.g., 10\%) reflecting their cost of capital and risk premium.
+
+Both criteria must be satisfied simultaneously for investment to proceed.
+
+\textbf{Forecast Formation:}
+
+Investors form expectations about future SAF prices, demand growth, and feedstock costs based on:
+
+\begin{itemize}
+    \item Historical price trends (if data available from past periods)
+    \item Announced policy mandates and their timing
+    \item Current supply-demand balance
+    \item Observed investment activity by competitors
+    \item An "optimism factor" (adjustable parameter) that scales price forecasts upward or downward
+\end{itemize}
+
+Forecasts are inherently uncertain and may prove systematically biased (too optimistic or pessimistic), creating investment waves or delays.
+
+\textbf{Timing Considerations:}
+
+Investors face a strategic timing dilemma:
+
+\textit{Early entry advantages:} Lower feedstock costs via tier pricing, competitive positioning, first-mover branding
+
+\textit{Early entry risks:} Higher demand uncertainty, less proven technology, potentially lower SAF prices during ramp-up phase
+
+\textit{Late entry advantages:} Better market information, higher SAF prices as demand grows, technology improvements
+
+\textit{Late entry disadvantages:} Higher feedstock costs, competitive disadvantage versus established players
+
+The model captures these tradeoffs through the interaction of tier pricing, demand growth trajectories, and investor forecasting.
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Add details on NPV calculation (discount rate determination, cash flow projection method)
+    \item Include sensitivity of investment timing to ROACE hurdle rates (8\%, 10\%, 12\%, 15\%)
+    \item Discuss heterogeneous investors with different risk tolerances and capital costs
+    \item Add strategic considerations (capacity preemption, option value of waiting)
+\end{itemize}
+
+\newpage
+\section{Results}
+
+This section presents simulation results comparing the baseline model (simple supply-demand pricing) with the enhanced model (tier-based pricing mechanism). For each metric, we describe what is observed, explain how patterns emerge, and analyze why underlying mechanisms drive these outcomes.
+
+\subsection{Market Price Development}
+
+Market prices for SAF determine profitability for producers and signal investment opportunities. Price evolution reflects the interaction of growing mandates, capacity additions, and feedstock cost structures.
+
+\textbf{Old Model:} [INSERT FIGURE - Market price over 80 years, baseline model]
+
+\textbf{New Model:} [INSERT FIGURE - Market price over 80 years, tier-based model]
+
+\textbf{What to observe:}
+\begin{itemize}
+    \item Initial price levels and volatility in early years
+    \item Long-term price trends (increasing, decreasing, or stabilizing)
+    \item Inflection points where price behavior changes
+    \item Differences between baseline and tier-based pricing models
+\end{itemize}
+
+\textbf{How patterns emerge:}
+\begin{itemize}
+    \item Early years may show high prices due to supply scarcity relative to mandates
+    \item Investment waves add capacity, potentially overshooting demand and depressing prices
+    \item As tier prices rise, marginal costs increase, supporting higher equilibrium prices
+    \item Long-term convergence reflects mature market with balanced supply-demand
+\end{itemize}
+
+\textbf{Why these mechanisms matter:}
+\begin{itemize}
+    \item Tier pricing creates cost escalation, establishing a rising price floor over time
+    \item Investor forecasting drives timing of capacity additions, creating supply surges or shortages
+    \item Mandate growth provides demand certainty, supporting stable long-term prices
+    \item Contract lock-in prevents rapid price adjustments, smoothing volatility
+\end{itemize}
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Decompose price into feedstock cost component, processing cost, and margin
+    \item Show price variability across different regions or aggregators
+    \item Compare simulated prices to reference prices (conventional jet fuel, carbon prices)
+    \item Analyze what price levels make SAF competitive without subsidies
+\end{itemize}
+
+\subsection{Supply and Demand Balance}
+
+The balance between SAF production capacity (supply) and mandate requirements (demand) determines market tightness, price pressures, and the need for additional investment.
+
+\textbf{Old Model:} [INSERT FIGURE - Supply and demand over time, baseline model]
+
+\textbf{New Model:} [INSERT FIGURE - Supply and demand over time, tier-based model]
+
+\textbf{What to observe:}
+\begin{itemize}
+    \item Periods of supply shortage (demand exceeds capacity)
+    \item Periods of oversupply (capacity exceeds demand)
+    \item Timing and magnitude of capacity addition waves
+    \item Differences in supply adequacy between models
+\end{itemize}
+
+\textbf{How patterns emerge:}
+\begin{itemize}
+    \item Initial shortage as industry scales up to meet first mandates
+    \item Investment waves as multiple projects reach completion simultaneously
+    \item Construction delays (2-3 years) create lags between investment decisions and capacity additions
+    \item Overshooting due to investor herding and forecast errors
+\end{itemize}
+
+\textbf{Why these mechanisms matter:}
+\begin{itemize}
+    \item High prices during shortages trigger investment surges
+    \item Long construction times mean investors must forecast several years ahead
+    \item Tier pricing may dampen investment enthusiasm, leading to tighter supply-demand balance
+    \item Mandates provide demand floor, preventing catastrophic oversupply
+\end{itemize}
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Quantify percentage supply adequacy (capacity / demand) over time
+    \item Show capacity additions per year (investment rate)
+    \item Analyze investment clustering - do plants enter in waves or steadily?
+    \item Compare supply adequacy to policy targets (are mandates met?)
+\end{itemize}
+
+\subsection{Price Forecasting Accuracy}
+
+Investors' price forecasts drive investment decisions. Forecast accuracy - or systematic bias - significantly affects market development and outcomes.
+
+\textbf{Old Model:} [INSERT FIGURE - Forecast vs. actual prices, baseline model]
+
+\textbf{New Model:} [INSERT FIGURE - Forecast vs. actual prices, tier-based model]
+
+\textbf{What to observe:}
+\begin{itemize}
+    \item Systematic over-forecasting (optimistic bias) or under-forecasting (pessimistic bias)
+    \item Forecast error magnitude and how it evolves over time
+    \item Differences in forecast accuracy between pricing models
+\end{itemize}
+
+\textbf{How patterns emerge:}
+\begin{itemize}
+    \item Early periods show large forecast errors due to market immaturity
+    \item Systematic bias emerges from optimism factors in forecasting models
+    \item Learning may improve forecasts over time as more data becomes available
+    \item Tier pricing may be more predictable than market-clearing prices
+\end{itemize}
+
+\textbf{Why these mechanisms matter:}
+\begin{itemize}
+    \item Optimistic forecasts trigger excessive investment, leading to overcapacity and low prices
+    \item Pessimistic forecasts delay investment, creating supply shortages and high prices
+    \item Tier pricing provides clearer cost signals, potentially improving forecast accuracy
+    \item Forecast errors create boom-bust cycles harmful to market stability
+\end{itemize}
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Quantify forecast error metrics (RMSE, mean absolute error, bias)
+    \item Analyze sensitivity to optimism factor parameter
+    \item Show how forecast errors translate into NPV miscalculations
+    \item Discuss policy implications - do price floors or ceilings improve outcomes?
+\end{itemize}
+
+\subsection{Investor Count Evolution}
+
+The number of investors entering the market reveals how attractive the SAF industry is perceived to be and how competitive dynamics evolve.
+
+\textbf{Old Model:} [INSERT FIGURE - Cumulative investors over time, baseline model]
+
+\textbf{New Model:} [INSERT FIGURE - Cumulative investors over time, tier-based model]
+
+\textbf{What to observe:}
+\begin{itemize}
+    \item Total number of investors by simulation end
+    \item Timing and magnitude of entry waves
+    \item Whether entry is front-loaded (early rush) or back-loaded (delayed entry)
+    \item Differences in investor count between models
+\end{itemize}
+
+\textbf{How patterns emerge:}
+\begin{itemize}
+    \item High initial prices and optimistic forecasts trigger early investment wave
+    \item As tier prices rise, later entrants face margin compression, slowing entry
+    \item Some periods may see zero entry as market conditions deteriorate
+    \item Entry resumes when improved demand or prices restore investment attractiveness
+\end{itemize}
+
+\textbf{Why these mechanisms matter:}
+\begin{itemize}
+    \item NPV and ROACE thresholds act as gates - only projects clearing these hurdles proceed
+    \item Tier pricing creates natural entry limits as marginal investors face uncompetitive costs
+    \item First-mover advantages incentivize early entry despite higher uncertainty
+    \item Market saturation eventually stops entry as supply meets demand
+\end{itemize}
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Show annual entry rate (new investors per year) in addition to cumulative total
+    \item Analyze entry concentration (Herfindahl index) and market structure
+    \item Compare to industry capacity targets - is investment adequate?
+    \item Discuss implications for competition and market power
+\end{itemize}
+
+\subsection{Production and Utilization}
+
+Individual plant production levels reveal capacity utilization rates, operational performance, and responses to market conditions.
+
+\textbf{Old Model:} [INSERT FIGURE - Production per plant over time, baseline model]
+
+\textbf{New Model:} [INSERT FIGURE - Production per plant over time, tier-based model]
+
+\textbf{What to observe:}
+\begin{itemize}
+    \item Average utilization rates across the fleet
+    \item Whether plants operate at full capacity or curtail production
+    \item Differences in utilization between early entrants and late entrants
+    \item How utilization responds to price changes
+\end{itemize}
+
+\textbf{How patterns emerge:}
+\begin{itemize}
+    \item Plants generally operate at full capacity when prices exceed variable costs
+    \item Curtailment occurs when SAF prices fall below variable costs despite take-or-pay penalties
+    \item Late entrants with high feedstock costs more likely to curtail during downturns
+    \item Long-term utilization rates reflect overall supply-demand balance
+\end{itemize}
+
+\textbf{Why these mechanisms matter:}
+\begin{itemize}
+    \item Take-or-pay provisions create strong incentives for full utilization
+    \item Plants with low feedstock costs maintain production even in low-price environments
+    \item High-cost plants face difficult choice between operating losses and curtailment costs
+    \item Utilization rates directly impact NPV realization and investor returns
+\end{itemize}
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Quantify capacity factors (average utilization percentage)
+    \item Analyze curtailment decisions - under what conditions do plants shut down?
+    \item Show how utilization varies across plants with different feedstock costs
+    \item Discuss implications for plant reliability and investment decisions
+\end{itemize}
+
+\subsection{Curtailed Volume Analysis}
+
+Curtailed volume - feedstock contracted but not used - indicates market stress and operational challenges. Under take-or-pay contracts, curtailment creates direct financial penalties.
+
+\textbf{Old Model:} [INSERT FIGURE - Curtailed volume over time, baseline model]
+
+\textbf{New Model:} [INSERT FIGURE - Curtailed volume over time, tier-based model]
+
+\textbf{What to observe:}
+\begin{itemize}
+    \item Total curtailed volume and which plants curtail most
+    \item Timing of curtailment events (do they cluster during low-price periods?)
+    \item Differences in curtailment patterns between models
+\end{itemize}
+
+\textbf{How patterns emerge:}
+\begin{itemize}
+    \item Curtailment spikes when SAF prices fall below variable costs plus take-or-pay penalties
+    \item Late entrants with high feedstock costs curtail first and most severely
+    \item Oversupply periods trigger widespread curtailment as competition intensifies
+    \item Curtailment ends when prices recover or marginal plants exit
+\end{itemize}
+
+\textbf{Why these mechanisms matter:}
+\begin{itemize}
+    \item Tier pricing creates cost heterogeneity - high-cost plants are marginal producers
+    \item Take-or-pay penalties mean curtailment only occurs when losses are severe
+    \item Curtailment indicates inefficient capacity allocation and market stress
+    \item Persistent curtailment may trigger plant closures and investor losses
+\end{itemize}
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Calculate curtailment costs (volume × feedstock price) and impact on NPV
+    \item Analyze which plants curtail and their feedstock cost quartile
+    \item Show relationship between market prices and curtailment rates
+    \item Discuss policy interventions that might reduce curtailment (price floors, offtake guarantees)
+\end{itemize}
+
+\subsection{Financial Performance Metrics}
+
+Key Performance Indicators including NPV, ROACE, and profitability reveal financial health for individual plants and overall market attractiveness.
+
+\textbf{Old Model:} [INSERT FIGURE - NPV and ROACE distributions, baseline model]
+
+\textbf{New Model:} [INSERT FIGURE - NPV and ROACE distributions, tier-based model]
+
+\textbf{What to observe:}
+\begin{itemize}
+    \item Distribution of NPV across investors (mean, median, variance)
+    \item ROACE levels and how they compare to hurdle rates
+    \item Differences between early and late entrants
+    \item Evolution of profitability over plant lifetimes
+\end{itemize}
+
+\textbf{How patterns emerge:}
+\begin{itemize}
+    \item Early entrants achieve higher NPV due to low locked-in feedstock costs
+    \item Late entrants may achieve negative NPV if tier costs are very high
+    \item ROACE deteriorates over time as feedstock costs rise through tier mechanism
+    \item Market downturns severely impact high-cost plants
+\end{itemize}
+
+\textbf{Why these mechanisms matter:}
+\begin{itemize}
+    \item Tier pricing creates winner-take-all dynamics favoring early movers
+    \item Contract lock-in prevents cost adjustments, creating permanent competitive gaps
+    \item NPV and ROACE distributions indicate market efficiency and fairness
+    \item Persistent low returns may discourage future investment
+\end{itemize}
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Show NPV by entry cohort (year 1-10 entrants vs. year 11-20, etc.)
+    \item Calculate percentage of investors achieving positive NPV
+    \item Analyze returns relative to hurdle rates - is the market attractive?
+    \item Discuss policy implications for ensuring adequate returns to sustain investment
+\end{itemize}
+
+\newpage
+\section{Sensitivity Analysis}
+
+To understand model robustness and parameter influence, we conduct systematic sensitivity analyses on key parameters. This reveals which assumptions most strongly affect outcomes and provides insights for policy design.
+
+\subsection{Optimism Factor}
+
+The optimism factor scales investor price forecasts, representing systematic bias in expectations.
+
+\textbf{Test range:} 0.8 (pessimistic) to 1.2 (optimistic) in 0.1 increments
+
+\textbf{Key metrics:}
+\begin{itemize}
+    \item Number of investors entering market
+    \item Timing of investment waves
+    \item Supply-demand balance over time
+    \item Average NPV of investors
+    \item Curtailment levels
+\end{itemize}
+
+\textbf{Expected patterns:}
+\begin{itemize}
+    \item Higher optimism → more investment → potential oversupply
+    \item Lower optimism → delayed investment → supply shortages
+    \item Optimal level may exist balancing investment adequacy with overshooting risk
+\end{itemize}
+
+[INSERT RESULTS - Graphs showing metrics vs. optimism factor]
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Compare optimism factors to historical forecast errors in analogous industries
+    \item Discuss psychological and institutional factors driving optimistic/pessimistic bias
+    \item Analyze whether learning mechanisms could reduce bias over time
+    \item Consider policy implications - do subsidies or guarantees reduce need for optimism?
+\end{itemize}
+
+\subsection{Tier Cost Increment}
+
+The tier cost increment (\$200/ton baseline) determines how quickly feedstock costs escalate, fundamentally shaping competitive dynamics.
+
+\textbf{Test range:} \$100, \$150, \$200 (baseline), \$250, \$300 per tier
+
+\textbf{Key metrics:}
+\begin{itemize}
+    \item Total investor count
+    \item NPV differential between first and last entrant
+    \item Market concentration (Herfindahl index)
+    \item Curtailment patterns
+    \item Average market price
+\end{itemize}
+
+\textbf{Expected patterns:}
+\begin{itemize}
+    \item Lower increments → more entry, more competition, lower market concentration
+    \item Higher increments → fewer entrants, larger first-mover advantages, potential oligopoly
+    \item Very high increments may prevent market development entirely
+\end{itemize}
+
+[INSERT RESULTS - Graphs showing metrics vs. tier cost increment]
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Estimate realistic tier cost increments from biomass industry data
+    \item Analyze welfare implications (consumer surplus, producer surplus, total surplus)
+    \item Consider dynamic tier costs that change with technology or scale
+    \item Discuss whether aggregator market power allows them to set tiers strategically
+\end{itemize}
+
+\subsection{Additional Sensitivity Parameters}
+
+\textbf{Tier Capacity:} Test 80k, 100k, 120k (baseline), 150k, 200k tons per tier to analyze how tier-to-plant-size ratios affect market structure.
+
+\textbf{ROACE Threshold:} Test 6\%, 8\%, 10\% (baseline), 12\%, 15\% to explore investment quantity-quality tradeoffs.
+
+\textbf{Contract Duration:} Test 10, 20 (baseline), 40, 60, 80 years to examine lock-in effects and market flexibility.
+
+[INSERT RESULTS for each parameter]
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Conduct multi-parameter sensitivity analysis (response surfaces)
+    \item Identify parameter combinations yielding optimal outcomes by various criteria
+    \item Perform Monte Carlo analysis with parameter uncertainty ranges
+    \item Validate parameter choices against real-world data where available
+\end{itemize}
+
+\newpage
+\section{Discussion}
+
+\subsection{Key Findings}
+
+This research demonstrates that feedstock pricing mechanisms significantly impact SAF market development. The tier-based approach better reflects aggregator cost structures than simple supply-demand pricing, creating more realistic competitive dynamics and investment outcomes.
+
+[Discuss main findings in detail]
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Synthesize findings across all result sections
+    \item Compare to existing literature on commodity markets and long-term contracting
+    \item Discuss unexpected or counterintuitive results
+    \item Provide quantitative summary of key differences between baseline and tier models
+\end{itemize}
+
+\subsection{Policy Implications}
+
+Model results offer several insights for policymakers seeking to support efficient SAF market development:
+
+[Discuss policy recommendations]
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Recommend specific policy interventions (subsidies, price floors, contract standards)
+    \item Discuss tradeoffs between market efficiency and investment support
+    \item Consider distributional effects - who wins and loses under different policies?
+    \item Address international coordination challenges
+\end{itemize}
+
+\subsection{Limitations}
+
+This model makes several simplifying assumptions that should be acknowledged:
+
+\begin{itemize}
+    \item Single aggregator (reality: multiple regional aggregators with different cost structures)
+    \item Homogeneous plants (reality: different technologies, scales, and efficiencies)
+    \item Deterministic mandates (reality: policy uncertainty and revisions)
+    \item No technology learning (reality: costs decline with cumulative production)
+    \item No strategic behavior (reality: capacity preemption, vertical integration)
+\end{itemize}
+
+[Discuss each limitation and potential impact]
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Quantify potential bias from each assumption using back-of-envelope calculations
+    \item Prioritize which limitations to address in future model versions
+    \item Compare to other ABM studies of commodity markets
+    \item Discuss validation challenges for forward-looking models of nascent industries
+\end{itemize}
+
+\newpage
+\section{Conclusions}
+
+This research developed and analyzed an agent-based model of SAF market dynamics with a focus on feedstock pricing mechanisms. The tier-based approach captures important features of biomass supply economics that simple market-clearing prices miss, including infrastructure constraints, capacity expansion costs, and opportunity costs.
+
+Key contributions include:
+
+\begin{enumerate}
+    \item Demonstration that pricing mechanisms significantly affect market outcomes
+    \item Quantification of first-mover advantages under tier pricing
+    \item Analysis of how contract structures interact with pricing to shape competitive dynamics
+    \item Identification of parameter sensitivities for policy design
+\end{enumerate}
+
+The results suggest that tier-based pricing, while more complex, better reflects market realities and may lead to more efficient long-term market development. However, this advantage must be weighed against increased complexity and potential for aggregator market power.
+
+Future work should address model limitations, incorporate additional market features, and validate findings against emerging real-world SAF market data as the industry matures.
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Provide specific quantitative conclusions (e.g., "tier pricing reduces total investor count by X\% but increases early investor NPV by Y\%")
+    \item Revisit research objectives and assess which were fully achieved
+    \item Summarize most important policy recommendations
+    \item Highlight most promising directions for future research
+\end{itemize}
+
+\section{Recommendations}
+
+Based on simulation results and analysis, we recommend:
+
+\textbf{For Policymakers:}
+\begin{itemize}
+    \item Consider mandating transparent tier-based pricing structures for large aggregators
+    \item Implement monitoring of feedstock price formation to detect market power abuse
+    \item Design subsidies or price supports to ensure adequate investment while avoiding overcapacity
+    \item Promote long-term contracts to provide investment certainty, but with periodic review mechanisms
+\end{itemize}
+
+\textbf{For Investors:}
+\begin{itemize}
+    \item Recognize substantial first-mover advantages in securing low-cost feedstock
+    \item Conduct thorough due diligence on aggregator cost structures and tier pricing
+    \item Build contract flexibility provisions where possible to manage long-term lock-in risks
+    \item Consider vertical integration into feedstock aggregation to control costs
+\end{itemize}
+
+\textbf{For Future Research:}
+\begin{itemize}
+    \item Extend model to include multiple competing aggregators
+    \item Incorporate technology heterogeneity and learning curves
+    \item Add strategic behavior and game-theoretic considerations
+    \item Validate against real-world SAF market data as it becomes available
+    \item Explore international trade in feedstocks and SAF
+\end{itemize}
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Prioritize recommendations by feasibility and potential impact
+    \item Provide specific implementation steps for each recommendation
+    \item Discuss stakeholder alignment or conflicts around recommendations
+    \item Consider phasing or sequencing of policy interventions
+\end{itemize}
+
+\section*{Acknowledgements}
+\addcontentsline{toc}{section}{Acknowledgements}
+
+I would like to thank my supervisors at Shell for their guidance and support throughout this internship. [Add specific names and contributions]. I am also grateful to the faculty at TU Delft for their academic supervision and feedback on this research.
+
+Special thanks to [colleagues, data providers, reviewers] who contributed to this work through discussions, data sharing, and constructive criticism.
+
+\textbf{Suggestions for expansion:}
+\begin{itemize}
+    \item Add specific names of supervisors and their roles
+    \item Acknowledge data sources and technical support
+    \item Thank reviewers or peers who provided feedback
+    \item Mention any funding sources or institutional support
+\end{itemize}
+
+\newpage
+\bibliographystyle{unsrt}
+\bibliography{references}
+
+% Add your references to a references.bib file
+
+\end{document}
