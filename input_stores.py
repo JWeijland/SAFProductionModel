@@ -34,14 +34,6 @@ SLIDER_CONFIG_KEYS_SINGLE = {
 
     "start_year": {"min": 0, "max": 4048.0, "step": 202.4, "default": 2024.0},
 
-    "inflation_rate": {"min": 0.0, "max": 0.10, "step": 0.001, "default": 0.0},
-
-    "tech_improvement_rate": {"min": 0.0, "max": 0.05, "step": 0.001, "default": 0.0},
-
-    "market_escalation_rate": {"min": 0.0, "max": 0.10, "step": 0.001, "default": 0.0},
-
-    "contract_escalation_rate": {"min": 0.0, "max": 0.10, "step": 0.001, "default": 0.0},
-
     "tier_capacity_size": {"min": 50000, "max": 500000, "step": 10000, "default": 120000},
 
     "tier_cost_increment": {"min": 50, "max": 500, "step": 50, "default": 200},

@@ -203,11 +203,8 @@ class SAFProductionSite(Agent):
 
         Formula: SRMC = feedstock_price + opex + transport_cost + profit_margin
 
-        If current_year provided, all cost components escalate at market_escalation_rate.
-        Otherwise uses base prices (backwards compatibility).
-
         Parameters:
-            current_year: Optional calendar year for market price escalation
+            current_year: Optional calendar year (for compatibility, not used for escalation)
             use_marginal_cost: If True, use marginal feedstock cost (for merit order).
                              If False, use weighted average over typical volume (for contracts/NPV).
 
@@ -215,11 +212,6 @@ class SAFProductionSite(Agent):
             SRMC value (float).
         """
         if current_year is not None:
-            start_year = int(self.model.config["start_year"])
-            years_elapsed = current_year - start_year
-            market_escalation_rate = float(self.model.config.get("market_escalation_rate", 0.02))
-            escalation_factor = (1 + market_escalation_rate) ** years_elapsed
-
             if use_marginal_cost:
                 # Merit order: use marginal cost (cost of next tonne at current tier position)
                 feedstock_price = self.aggregator.get_marginal_feedstock_price()
@@ -227,11 +219,7 @@ class SAFProductionSite(Agent):
                 # Contracts/NPV: use weighted average over typical volume
                 feedstock_price = self.aggregator.get_current_market_price(current_year)
 
-            opex_escalated = self.opex * escalation_factor
-            transport_escalated = self.transport_cost * escalation_factor
-            margin_escalated = self.profit_margin * escalation_factor
-
-            srmc_total = feedstock_price + opex_escalated + transport_escalated + margin_escalated
+            srmc_total = feedstock_price + self.opex + self.transport_cost + self.profit_margin
         else:
             feedstock_price = self.aggregator.feedstock_price
             srmc_total = feedstock_price + self.opex + self.transport_cost + self.profit_margin

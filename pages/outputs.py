@@ -253,8 +253,6 @@ layout = html.Div(
 
         # Additional Metrics stores
 
-        dcc.Store(id="store-graph-contract-vs-spot-prices", storage_type="session"),
-
         dcc.Store(id="store-graph-cumulative-penalties", storage_type="session"),
 
         dcc.Store(id="store-graph-tier-allocation-by-state", storage_type="session"),
@@ -563,35 +561,25 @@ layout = html.Div(
 
                             children=[
 
-                                # Section 1: Price Dynamics
-
-                                html.H4("Price Dynamics & Contract Analysis", className="mt-3 mb-3", style={"color": "#0c72b6"}),
-
-                                dbc.Row(
-
-                                    [
-
-                                        dbc.Col(
-
-                                            template_graph(
-
-                                                "Contract vs Spot Feedstock Prices",
-
-                                                subtitle="Contract: locked tier price with CPI escalation. Spot: current market tier price (rises as capacity fills)",
-
-                                                graph_id="graph-contract-vs-spot-prices",
-
+                                # Merit Order
+                                html.Hr(className="my-4"),
+                                html.H4("Merit Order", className="mb-3", style={"color": "#0c72b6"}),
+                                dbc.Row([
+                                    dbc.Col(
+                                        template_graph(
+                                            "SRMC Merit Order (Stacked Components)",
+                                            graph_id="merit-order-simple",
+                                            dropdown=dcc.Dropdown(
+                                                id="merit-order-year-select",
+                                                options=[],
+                                                value=2050,
+                                                placeholder="Select year",
+                                                clearable=False,
                                             ),
-
-                                            md=12,
-
                                         ),
-
-                                    ]
-
-                                ),
-
-
+                                        md=12,
+                                    ),
+                                ]),
 
                                 # Section 2: Take-or-Pay Penalties
 
@@ -662,23 +650,6 @@ layout = html.Div(
                                 ),
 
 
-                                # Section 4: KPI Comparison
-
-                                html.Hr(className="my-4"),
-
-                                html.H4("Model Comparison: Baseline vs Advanced", className="mb-3", style={"color": "#0c72b6"}),
-
-                                html.P(
-                                    "Comparison of key metrics between baseline and advanced model.",
-                                    style={"marginBottom": "20px", "fontSize": "14px", "color": "#666"}
-                                ),
-
-                                dbc.Row([
-                                    dbc.Col(
-                                        html.Div(id="kpi-comparison-table"),
-                                        md=12,
-                                    ),
-                                ]),
 
                             ],
 

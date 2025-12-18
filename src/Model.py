@@ -179,6 +179,26 @@ class SAFMarketModel(Model):
                 "SRMC": lambda a: (
                     getattr(a, "srmc", None) if hasattr(a, "srmc") else None
                 ),
+                "Opex": lambda a: (
+                    getattr(a, "opex", None) if hasattr(a, "opex") else None
+                ),
+                "Transport_Cost": lambda a: (
+                    getattr(a, "transport_cost", None) if hasattr(a, "transport_cost") else None
+                ),
+                "Profit_Margin": lambda a: (
+                    getattr(a, "profit_margin", None) if hasattr(a, "profit_margin") else None
+                ),
+                "Max_Capacity": lambda a: (
+                    getattr(a, "max_capacity", None) if hasattr(a, "max_capacity") else None
+                ),
+                "Is_Operational": lambda a: (
+                    getattr(a, "operational_year", None) <= getattr(a.model.schedule, "time", float("inf"))
+                    if hasattr(a, "operational_year") and hasattr(a, "model") and hasattr(a.model, "schedule")
+                    else None
+                ),
+                "Plant_ID": lambda a: (
+                    getattr(a, "site_id", None) if hasattr(a, "site_id") else None
+                ),
                 "Design_Load_Factor": lambda a: (
                     getattr(a, "design_load_factor", None)
                     if hasattr(a, "design_load_factor")
@@ -706,16 +726,13 @@ class SAFMarketModel(Model):
             self.production_sites, current_tick, model=self
         )
 
-        # Escalate ATF+ price with inflation for economic consistency
-        base_atf_plus_price = float(self.config["atf_plus_price"])
-        inflation_rate = float(self.config.get("inflation_rate", 0.03))
-        years_elapsed = current_year - start_year
-        escalated_atf_plus_price = base_atf_plus_price * ((1 + inflation_rate) ** years_elapsed)
+        # Use base ATF+ price (no escalation)
+        atf_plus_price = float(self.config["atf_plus_price"])
 
         self.market_price, self.marginal_details = calculate_consumer_price(
             operational_sites_data,
             demand_this_tick=demand_this_tick,
-            atf_plus_price=escalated_atf_plus_price,
+            atf_plus_price=atf_plus_price,
         )
         for investor in self.investors:
             investor.consumer_price_forecast = [

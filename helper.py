@@ -288,24 +288,6 @@ def render_config_tab():
 
         render_slider_card(
 
-            "Price Escalation",
-
-            [
-
-                create_slider("inflation_rate", SLIDER_CONFIG_KEYS_SINGLE["inflation_rate"], title="Inflation Rate (CPI)"),
-
-                create_slider("tech_improvement_rate", SLIDER_CONFIG_KEYS_SINGLE["tech_improvement_rate"], title="Tech Improvement Rate"),
-
-                create_slider("market_escalation_rate", SLIDER_CONFIG_KEYS_SINGLE["market_escalation_rate"], title="Market Escalation Rate"),
-
-                create_slider("contract_escalation_rate", SLIDER_CONFIG_KEYS_SINGLE["contract_escalation_rate"], title="Contract Escalation Rate"),
-
-            ],
-
-        ),
-
-        render_slider_card(
-
             "Tiered Pricing",
 
             [

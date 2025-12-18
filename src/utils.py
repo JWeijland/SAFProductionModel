@@ -140,9 +140,9 @@ def forecast_consumer_prices(
     model_start_year = model.config["start_year"]
     current_year = int(model_start_year + current_tick)
     end_year = int(current_year + int(investment_horizon))
- 
-    inflation_rate = float(model.config.get("inflation_rate", 0.03))
-    base_atf_plus_price = float(atf_plus_price)  # This is the base price passed in
+
+    # Use fixed ATF+ price (no escalation)
+    atf_plus_price_fixed = float(atf_plus_price)
 
     for year in range(current_year + 1, end_year + 1):
 
@@ -156,13 +156,11 @@ def forecast_consumer_prices(
             get_saf_demand_forecast(year, model.config, demand_forecast)
         )
 
-        years_elapsed_forecast = year - int(model_start_year)
-        escalated_atf_plus_price_forecast = base_atf_plus_price * ((1 + inflation_rate) ** years_elapsed_forecast)
-
+        # No escalation - use fixed ATF+ price
         price, details = calculate_consumer_price(
             operational_sites,
             demand,
-            escalated_atf_plus_price_forecast,
+            atf_plus_price_fixed,
         )
         forecast.append([price, [details]])
  

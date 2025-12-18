@@ -783,11 +783,18 @@ def register_callbacks(app: dash.Dash) -> None:
 
 
         # Filter out construction period - only show operational years
-        # A plant is operational when Production_Output > 0 for that year
+        # Keep operational years even if Production_Output == 0 (curtailment/oversupply)
         if "Production_Output" in df.columns:
             df["Production_Output"] = pd.to_numeric(df["Production_Output"], errors="coerce").fillna(0)
-            # Only keep rows where plant has started producing
-            df = df[df["Production_Output"] > 0].copy()
+
+        # Use Is_Operational flag to filter out construction period
+        # This ensures curtailed plants (production = 0) are still shown
+        if "Is_Operational" in df.columns:
+            df = df[df["Is_Operational"] == True].copy()
+        else:
+            # Fallback: keep rows where production >= 0 (including zero production)
+            # This shows curtailment instead of hiding it
+            df = df[df["Production_Output"] >= 0].copy()
 
 
 
@@ -4424,7 +4431,7 @@ def register_callbacks(app: dash.Dash) -> None:
         """
         Graph 3: Contract vs Spot Feedstock Prices over time
         Shows two lines:
-        - Contract Price: Locked-in tier price with CPI escalation (from site contracts)
+        - Contract Price: Fixed locked-in tier price (from site contracts)
         - Spot Price: Current market price reflecting tier capacity allocation
         """
         if not site_data or not aggregator_data or not run_info:
@@ -4433,11 +4440,6 @@ def register_callbacks(app: dash.Dash) -> None:
         try:
             df_sites = pd.DataFrame(site_data)
             df_agg = pd.DataFrame(aggregator_data)
-
-            # Get config to check escalation rates
-            config = run_info.get("config", {})
-            contract_escalation = float(config.get("contract_escalation_rate", 0.0))
-            market_escalation = float(config.get("market_escalation_rate", 0.0))
 
             # Process site data for contract prices
             df_sites["Year"] = pd.to_numeric(df_sites["Year"], errors="coerce")
@@ -4459,7 +4461,7 @@ def register_callbacks(app: dash.Dash) -> None:
                         x=contract_avg["Year"],
                         y=contract_avg["Contract_Price"],
                         mode="lines+markers",
-                        name=f"Contract Price (locked tier + {contract_escalation:.1%} CPI)",
+                        name="Contract Price (fixed tier)",
                         line=dict(color="#1f77b4", width=3, dash="solid"),
                         marker=dict(size=6),
                     ))
@@ -4475,7 +4477,7 @@ def register_callbacks(app: dash.Dash) -> None:
                         x=spot_avg["Year"],
                         y=spot_avg[spot_col],
                         mode="lines+markers",
-                        name=f"Spot Market Price (current tier + {market_escalation:.1%} escalation)",
+                        name="Spot Market Price (current tier)",
                         line=dict(color="#ff7f0e", width=3, dash="dot"),
                         marker=dict(size=6, symbol="diamond"),
                     ))
@@ -5429,7 +5431,306 @@ def register_callbacks(app: dash.Dash) -> None:
         # Add grid
         fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor="lightgray")
         fig.update_yaxes(showgrid=True, gridwidth=0.5, gridcolor="lightgray")
-        
+
         return fig
 
 
+
+
+    # ========================================================================
+    # MERIT ORDER - SIMPLE VERSION
+    # ========================================================================
+
+    @app.callback(
+        Output("merit-order-year-select", "options"),
+        Output("merit-order-year-select", "value"),
+        Input("store-current-run-info", "data"),
+    )
+    def populate_merit_order_years(run_info):
+        """Populate year dropdown with available years"""
+        import os
+
+        log_path = "/Users/jelleweijland/Documents/Stage/Shell/VSCode_copy_0_3/logs/agent_log.csv"
+
+        if not os.path.exists(log_path):
+            return [], 2050
+
+        try:
+            df = pd.read_csv(log_path)
+            df = df[df["Type"] == "SAFProductionSite"]
+            years = sorted(df["Year"].dropna().unique())
+
+            if not years:
+                return [], 2050
+
+            options = [{"label": str(int(year)), "value": int(year)} for year in years]
+            default_year = int(years[len(years) // 2])  # Middle year
+
+            return options, default_year
+        except:
+            return [], 2050
+
+    @app.callback(
+        Output("merit-order-simple", "figure"),
+        Input("merit-order-year-select", "value"),
+    )
+    def plot_simple_merit_order(selected_year):
+        """Merit order for selected year using MARGINAL feedstock cost (same as market clearing)"""
+        import os
+
+        if selected_year is None:
+            selected_year = 2050
+
+        # Load from log file
+        log_path = "/Users/jelleweijland/Documents/Stage/Shell/VSCode_copy_0_3/logs/agent_log.csv"
+
+        if not os.path.exists(log_path):
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return fig
+
+        # Load and filter data
+        full_df = pd.read_csv(log_path)
+
+        # Get aggregator data for marginal pricing
+        agg_df = full_df[full_df["Type"] == "FeedstockAggregator"]
+        agg_df = agg_df[agg_df["Year"] == selected_year]
+
+        # Create mapping: state_id -> cumulative_allocated
+        state_cumulative = {}
+        if not agg_df.empty:
+            for _, row in agg_df.iterrows():
+                state = row.get("State_ID")
+                cumulative = row.get("Cumulative_Allocated", 0)
+                if state and pd.notna(cumulative):
+                    state_cumulative[state] = cumulative
+
+        # Get plants
+        df = full_df[full_df["Type"] == "SAFProductionSite"]
+        df = df[df["Year"] == selected_year]
+
+        # Filter operational
+        df["Is_Op"] = df["Is_Operational"].map({True: True, "True": True, 1: True})
+        df = df[df["Is_Op"] == True]
+
+        # Filter valid SRMC
+        df = df[df["SRMC"] > 0]
+
+        if df.empty:
+            fig = go.Figure()
+            fig.add_annotation(
+                text=f"No data for year {selected_year}",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return fig
+
+        # Sort by logged SRMC (this is the actual SRMC used by the model)
+        # No need to recalculate - the logged SRMC already reflects the model's pricing logic
+        df = df.sort_values("SRMC")
+        df = df.reset_index(drop=True)
+
+        # Calculate feedstock price from SRMC (SRMC = Feedstock + Opex + Transport + Margin)
+        df["Calculated_Feedstock"] = df["SRMC"] - df["Opex"] - df["Transport_Cost"] - df["Profit_Margin"]
+
+        # CRITICAL FIX: Filter out plants with zero actual production
+        # The model's calculate_consumer_price filters on production_output > 0
+        # Even though find_operational_sites uses TRUE capacity, plants with 0 actual
+        # production are excluded from market clearing (observed empirically)
+        df_for_marginal = df[df["Production_Output"] > 0].copy()
+        df_for_marginal = df_for_marginal.reset_index(drop=True)
+
+        # Get demand to identify marginal producer
+        model_log_path = "/Users/jelleweijland/Documents/Stage/Shell/VSCode_copy_0_3/logs/model_log.csv"
+        demand = None
+        marginal_producer_index = None
+
+        if os.path.exists(model_log_path):
+            try:
+                model_df = pd.read_csv(model_log_path)
+                model_row = model_df[model_df["Year"] == selected_year]
+                if not model_row.empty:
+                    demand = model_row["Demand"].values[0]
+
+                    # Find marginal producer in the sorted df (Production_Output > 0)
+                    # Market clearing uses ACTUAL production_output, not TRUE capacity
+                    # This matches utils.py calculate_consumer_price() lines 86-90
+                    cumulative = 0
+                    for idx in range(len(df)):
+                        row = df.iloc[idx]
+                        # Skip plants with zero production
+                        if row["Production_Output"] <= 0:
+                            continue
+
+                        # Use actual production output (not capacity)
+                        actual_production = row["Production_Output"]
+                        prev_cumulative = cumulative
+                        cumulative += actual_production
+
+                        if prev_cumulative < demand <= cumulative:
+                            marginal_producer_index = idx
+                            break
+            except Exception as e:
+                print(f"Could not load demand: {e}")
+
+        # Get plant labels and investor info
+        plant_labels = df["Plant_ID"].values if "Plant_ID" in df.columns else [f"Plant {i+1}" for i in range(len(df))]
+        investor_ids = df["Investor_ID"].values if "Investor_ID" in df.columns else ["Unknown"] * len(df)
+        state_ids = df["State_ID"].values if "State_ID" in df.columns else ["Unknown"] * len(df)
+
+        # Create stacked bar chart with MARGINAL SRMC
+        fig = go.Figure()
+
+        # Create color arrays - highlight marginal producer with darker shade
+        feedstock_colors = ['#2ca02c'] * len(df)
+        opex_colors = ['#ff7f0e'] * len(df)
+        transport_colors = ['#d62728'] * len(df)
+        margin_colors = ['#9467bd'] * len(df)
+
+        if marginal_producer_index is not None:
+            # Darker shade for marginal producer
+            feedstock_colors[marginal_producer_index] = '#1a6b1a'  # Darker green
+            opex_colors[marginal_producer_index] = '#cc6600'  # Darker orange
+            transport_colors[marginal_producer_index] = '#a01f1f'  # Darker red
+            margin_colors[marginal_producer_index] = '#6b4a8f'  # Darker purple
+
+        # Add each component as a separate trace with plant/investor info
+        # Using logged SRMC and calculated feedstock price
+        fig.add_trace(go.Bar(
+            name='Feedstock Price',
+            x=list(range(len(df))),
+            y=df["Calculated_Feedstock"],
+            marker_color=feedstock_colors,
+            customdata=list(zip(plant_labels, investor_ids, state_ids, df["SRMC"])),
+            hovertemplate=(
+                '<b>%{customdata[0]}</b><br>'
+                'Investor: %{customdata[1]}<br>'
+                'State: %{customdata[2]}<br>'
+                '<b>SRMC: $%{customdata[3]:.2f}</b><br><br>'
+                'Feedstock: $%{y:.2f}<extra></extra>'
+            )
+        ))
+
+        fig.add_trace(go.Bar(
+            name='Opex',
+            x=list(range(len(df))),
+            y=df["Opex"],
+            marker_color=opex_colors,
+            customdata=list(zip(plant_labels, investor_ids, state_ids, df["SRMC"])),
+            hovertemplate=(
+                '<b>%{customdata[0]}</b><br>'
+                'Investor: %{customdata[1]}<br>'
+                'State: %{customdata[2]}<br>'
+                '<b>SRMC: $%{customdata[3]:.2f}</b><br><br>'
+                'Opex: $%{y:.2f}<extra></extra>'
+            )
+        ))
+
+        fig.add_trace(go.Bar(
+            name='Transport',
+            x=list(range(len(df))),
+            y=df["Transport_Cost"],
+            marker_color=transport_colors,
+            customdata=list(zip(plant_labels, investor_ids, state_ids, df["SRMC"])),
+            hovertemplate=(
+                '<b>%{customdata[0]}</b><br>'
+                'Investor: %{customdata[1]}<br>'
+                'State: %{customdata[2]}<br>'
+                '<b>SRMC: $%{customdata[3]:.2f}</b><br><br>'
+                'Transport: $%{y:.2f}<extra></extra>'
+            )
+        ))
+
+        fig.add_trace(go.Bar(
+            name='Margin',
+            x=list(range(len(df))),
+            y=df["Profit_Margin"],
+            marker_color=margin_colors,
+            customdata=list(zip(plant_labels, investor_ids, state_ids, df["SRMC"])),
+            hovertemplate=(
+                '<b>%{customdata[0]}</b><br>'
+                'Investor: %{customdata[1]}<br>'
+                'State: %{customdata[2]}<br>'
+                '<b>SRMC: $%{customdata[3]:.2f}</b><br><br>'
+                'Margin: $%{y:.2f}<extra></extra>'
+            )
+        ))
+
+        fig.update_layout(
+            title=f"Merit Order - Year {selected_year} (SRMC - Market Clearing)",
+            xaxis_title="Plant Rank (Lowest to Highest SRMC)",
+            yaxis_title="SRMC ($/tonne)",
+            height=500,
+            barmode='stack',
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+            hovermode='x unified'
+        )
+
+        # Add visualization for marginal producer
+        if marginal_producer_index is not None:
+            marginal_plant = df.iloc[marginal_producer_index]
+            marginal_srmc = marginal_plant["SRMC"]
+            plant_id = marginal_plant.get("Plant_ID", f"Plant {marginal_producer_index+1}")
+
+            # Add horizontal line showing market clearing price
+            fig.add_hline(
+                y=marginal_srmc,
+                line_dash="solid",
+                line_color="#FF0000",
+                line_width=3,
+                annotation_text=f"Market Clearing Price: ${marginal_srmc:.2f}",
+                annotation_position="right",
+                annotation_font_size=12,
+                annotation_font_color="#FF0000",
+                annotation_bgcolor="rgba(255,255,255,0.9)"
+            )
+
+            # Add vertical line at marginal producer position
+            fig.add_vline(
+                x=marginal_producer_index,
+                line_dash="dash",
+                line_color="#FF0000",
+                line_width=2
+            )
+
+            # Add prominent shape to highlight the marginal producer bar
+            fig.add_shape(
+                type="rect",
+                x0=marginal_producer_index - 0.45,
+                x1=marginal_producer_index + 0.45,
+                y0=0,
+                y1=marginal_srmc,
+                line=dict(color="#FF0000", width=4),
+                fillcolor="rgba(255,0,0,0.15)"
+            )
+
+            # Add annotation above the marginal producer (larger and more prominent)
+            fig.add_annotation(
+                x=marginal_producer_index,
+                y=marginal_srmc + 80,
+                text=f"<b>⭐ MARGINAL PRODUCER ⭐</b><br>{plant_id}<br>SRMC: ${marginal_srmc:.2f}",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=2,
+                arrowwidth=3,
+                arrowcolor="#FF0000",
+                ax=0,
+                ay=-60,
+                font=dict(size=13, color="#FF0000", family="Arial Black"),
+                bgcolor="rgba(255,255,255,0.98)",
+                bordercolor="#FF0000",
+                borderwidth=3,
+                borderpad=6
+            )
+
+        return fig

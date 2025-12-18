@@ -761,12 +761,6 @@ class Investor(Agent):
 
         # Use blended feedstock costs (contract + spot) instead of fixed aggregator price
         if current_year is not None:
-            # Calculate escalation factor for non-feedstock costs
-            start_year = int(self.model.config["start_year"])
-            years_elapsed = current_year - start_year
-            market_escalation_rate = float(self.model.config.get("market_escalation_rate", 0.02))
-            escalation_factor = (1 + market_escalation_rate) ** years_elapsed
-
             # Get spot price for this state
             spot_price = self.model.state_spot_prices.get(
                 site.state_id,
@@ -780,18 +774,16 @@ class Investor(Agent):
                 spot_price=spot_price
             )
 
-            # ALL cost components escalate at market rate (consistency with calculate_srmc)
-            opex_escalated = site.opex * escalation_factor
-            transport_escalated = site.transport_cost * escalation_factor
-            margin_escalated = site.profit_margin * escalation_factor
-
-            # Calculate contract-aware SRMC with escalated costs
+            # Calculate contract-aware SRMC (NO escalation - fixed costs)
             effective_srmc = (
                 blended_feedstock_cost
-                + opex_escalated
-                + transport_escalated
-                + margin_escalated
+                + site.opex
+                + site.transport_cost
+                + site.profit_margin
             )
+            opex_escalated = site.opex
+            transport_escalated = site.transport_cost
+            margin_escalated = site.profit_margin
         else:
             # Backwards compatibility: use original SRMC if no current_year provided
             effective_srmc = site.srmc
@@ -1058,12 +1050,12 @@ class Investor(Agent):
     ) -> float:
 
         """
-        # NPV calculation now accounts for blended feedstock costs with contract escalation.
+        # NPV calculation accounts for blended feedstock costs (contract + spot).
         # When contract_price and start_year are provided, the NPV forecast includes:
-        # - 85% contract pricing with 3% annual escalation for first 20 years
-        # - 15% spot pricing throughout
+        # - 80-90% contract pricing at FIXED tier price (no escalation)
+        # - 10-20% spot pricing at FIXED tier price + 10% premium
         # - 100% spot pricing after contract expires (year 21+)
-        # This provides realistic long-term cost evolution for investment decisions.
+        # All prices are FIXED (no escalation over time).
 
         Calculate the net present value (NPV) of a candidate site.
 
@@ -1126,9 +1118,6 @@ class Investor(Agent):
         contract_percentage_min = float(self.model.config.get("contract_percentage_min", 0.70))
         contract_percentage_max = float(self.model.config.get("contract_percentage_max", 0.70))
         contract_percentage = (contract_percentage_min + contract_percentage_max) / 2
-        # Get escalation rates from config
-        contract_escalation_rate = float(self.model.config.get("contract_escalation_rate", 0.03))  # CPI
-        market_escalation_rate = float(self.model.config.get("market_escalation_rate", 0.02))  # CPI - tech
         contract_duration = int(self.model.config.get("contract_duration", 20))
         construction_time = self.model.config["saf_plant_construction_time"]
 
@@ -1151,45 +1140,32 @@ class Investor(Agent):
                 cost = capex_schedule[t - 1]
 
             else:
-                # Operational phase - calculate SRMC with differential escalation
+                # Operational phase - calculate SRMC (NO escalation - fixed costs)
                 if use_contract_pricing:
                     # Years since plant became operational
                     years_operational = t - construction_time
 
-                    # Forecasted spot price with market escalation (2%/year with tech improvement)
-                    # Start from contract_price (current market) and escalate at market rate
-                    spot_forecast = contract_price * ((1 + market_escalation_rate) ** years_operational)
+                    # Use forecasted spot price from market (no escalation)
+                    spot_forecast = contract_price  # Fixed spot price
 
                     if years_operational <= contract_duration:
-                        # Contract is active - use blended pricing
-                        # Contract escalates at 3%/year (CPI) - FASTER than market
-                        escalated_contract_price = contract_price * ((1 + contract_escalation_rate) ** years_operational)
-
-                        # Spot escalates at 2%/year (CPI - tech) - SLOWER than contract
+                        # Contract is active - use blended pricing (FIXED prices)
                         blended_feedstock_cost = (
-                            escalated_contract_price * contract_percentage +
+                            contract_price * contract_percentage +
                             spot_forecast * (1 - contract_percentage)
                         )
-
-                        # Growing gap: contract (3%) vs market (2%) creates increasing cost penalty
                     else:
-                        # Contract expired - use 100% spot pricing (market escalation)
+                        # Contract expired - use 100% spot pricing (fixed)
                         blended_feedstock_cost = spot_forecast
 
-                    # All cost components escalate at market rate
-                    escalation_factor_npv = (1 + market_escalation_rate) ** years_operational
-                    opex_escalated_npv = site.opex * escalation_factor_npv
-                    transport_escalated_npv = site.transport_cost * escalation_factor_npv
-                    margin_escalated_npv = site.profit_margin * escalation_factor_npv
-
-                    # Calculate contract-aware SRMC for this year with ALL escalated costs
+                    # Calculate contract-aware SRMC with FIXED costs (no escalation)
                     effective_srmc_for_npv = (
                         blended_feedstock_cost +
-                        opex_escalated_npv +
-                        transport_escalated_npv +
-                        margin_escalated_npv
+                        site.opex +
+                        site.transport_cost +
+                        site.profit_margin
                     )
-                    effective_srmc_no_profit = effective_srmc_for_npv - margin_escalated_npv
+                    effective_srmc_no_profit = effective_srmc_for_npv - site.profit_margin
                 else:
                     # Backwards compatibility: use original SRMC
                     effective_srmc_for_npv = site.srmc
@@ -1485,8 +1461,8 @@ class Investor(Agent):
         Calculate blended feedstock cost for a plant.
 
         Returns weighted average of:
-        - Contract price (80-90% coverage) - escalated from initial price
-        - Spot price (10-20% remaining)
+        - Contract price (80-90% coverage) - FIXED tier price (no escalation)
+        - Spot price (10-20% remaining) - current tier price + spot premium
 
         If no contract exists for the plant, returns full spot price.
 
@@ -1499,7 +1475,7 @@ class Investor(Agent):
             Blended feedstock cost in USD/tonne
 
         Example:
-            Contract: 85% @ $695/tonne
+            Contract: 85% @ $695/tonne (fixed)
             Spot: 15% @ $720/tonne
             Blended: 0.85 * 695 + 0.15 * 720 = $699.75/tonne
         """
@@ -1515,7 +1491,7 @@ class Investor(Agent):
         if contract is None:
             return spot_price
 
-        # Get escalated contract price for this year
+        # Get fixed contract price (no escalation)
         contract_price = contract.get_price_for_year(current_year)
 
         # Calculate blended cost

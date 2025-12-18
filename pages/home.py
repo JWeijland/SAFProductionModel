@@ -172,25 +172,25 @@ layout = dbc.Container(
 
                             html.Li(
 
-                                "Models investor behavior using NPV and ROACE-based logic."
+                                "Models investor behavior with NPV-based decision logic and dynamic contract renewals."
 
                             ),
 
                             html.Li(
 
-                                "Simulates feedstock variability and competition across states."
+                                "Simulates feedstock markets with tier-based pricing and multi-year contract mechanisms."
 
                             ),
 
                             html.Li(
 
-                                "Forecasts SAF prices using market merit order and demand matching."
+                                "Calculates SAF prices using merit order dispatch with production cost ranking."
 
                             ),
 
                             html.Li(
 
-                                "Supports scenario analysis for policy, market, and feedstock outputs."
+                                "Tracks state-level feedstock competition and production site development."
 
                             ),
 

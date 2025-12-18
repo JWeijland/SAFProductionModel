@@ -22,7 +22,7 @@ class FeedstockContract:
     - Duration: 20 years (configurable)
     - Coverage: 50-100% of effective plant capacity (investor chooses, default 80-90%)
     - Effective capacity includes: design load factor × contracted load factor × stream days
-    - Pricing: Initial market price with 3% annual escalation
+    - Pricing: Fixed initial market price (no escalation)
     - Remaining percentage: Purchased at annual spot price
 
     Attributes:
@@ -30,8 +30,7 @@ class FeedstockContract:
         investor_id: ID of investor holding contract
         aggregator_id: ID of aggregator (state_id)
         plant_id: ID of production plant covered by contract
-        initial_contract_price: SRMC at contract signing (USD/tonne)
-        escalation_rate: Annual price increase rate (default: 0.03)
+        initial_contract_price: Fixed SRMC at contract signing (USD/tonne, no escalation)
         start_year: Year contract begins
         end_year: Year contract expires (start_year + duration)
         duration: Contract length in years (default: 20)
@@ -53,7 +52,7 @@ class FeedstockContract:
     contract_percentage: float  # 0.80 to 0.90
 
     # Optional fields (with defaults) must come after
-    escalation_rate: float = 0.03  # Annual increase (3% default)
+    escalation_rate: float = 0.0  # No escalation
     duration: int = 20  # years
     status: str = "active"  # "active" or "expired"
 
@@ -74,9 +73,10 @@ class FeedstockContract:
                 f"initial_contract_price must be positive, got {self.initial_contract_price}"
             )
 
-        if not 0 <= self.escalation_rate <= 0.10:
+        # Escalation rate must always be 0 (no escalation)
+        if self.escalation_rate != 0.0:
             raise ValueError(
-                f"escalation_rate must be between 0 and 0.10 (0-10%), got {self.escalation_rate}"
+                f"escalation_rate must be 0.0 (no escalation), got {self.escalation_rate}"
             )
 
         # Validate timing
@@ -130,19 +130,15 @@ class FeedstockContract:
 
     def get_price_for_year(self, current_year: int) -> float:
         """
-        Get escalated contract price for a specific year.
+        Get contract price for a specific year.
 
-        Formula: p(t) = p_0 × (1 + r)^t
-        where:
-            p_0 = initial_contract_price
-            r = escalation_rate
-            t = years since contract start
+        The contract price is fixed at initial_contract_price (no escalation).
 
         Args:
             current_year: Year to calculate price for
 
         Returns:
-            Escalated contract price in USD/tonne
+            Fixed contract price in USD/tonne
 
         Raises:
             ValueError: If current_year is before contract start
@@ -153,11 +149,8 @@ class FeedstockContract:
                 f"contract start_year ({self.start_year})"
             )
 
-        years_elapsed = current_year - self.start_year
-        escalated_price = self.initial_contract_price * (
-            (1 + self.escalation_rate) ** years_elapsed
-        )
-        return escalated_price
+        # Fixed price, no escalation
+        return self.initial_contract_price
 
     def is_active(self, current_year: int) -> bool:
         """
@@ -210,7 +203,7 @@ def create_contract_from_site(
     current_year: int,
     contract_percentage: float,
     duration: int = 20,
-    escalation_rate: float = 0.03
+    escalation_rate: float = 0.0
 ) -> FeedstockContract:
     """
     Factory function to create a contract from a SAFProductionSite.
@@ -224,7 +217,7 @@ def create_contract_from_site(
         current_year: Year contract is signed
         contract_percentage: Coverage fraction (0.50-1.00, typically 0.80-0.90)
         duration: Contract length in years (default: 20)
-        escalation_rate: Annual price escalation (default: 0.03)
+        escalation_rate: Must be 0.0 (no escalation)
 
     Returns:
         New FeedstockContract instance
@@ -234,8 +227,8 @@ def create_contract_from_site(
         investor_id=investor_id,
         aggregator_id=site.state_id,
         plant_id=site.site_id,
-        initial_contract_price=site.srmc,  # Use site's SRMC as base price
-        escalation_rate=escalation_rate,
+        initial_contract_price=site.srmc,  # Use site's SRMC as fixed price
+        escalation_rate=0.0,  # No escalation
         start_year=current_year,
         end_year=current_year + duration,
         duration=duration,
